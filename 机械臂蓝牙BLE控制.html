@@ -31,27 +31,46 @@ header button {
   cursor: pointer;
 }
 
-/* 核心：main容器相对定位，高度由背景图决定，溢出隐藏 */
+/* 核心：main容器设置为固定高度，基于图片宽高比计算 */
 main {
   position: relative;
   padding: 10px;
   max-width: 600px;
   margin: 0 auto;
-  height: auto;
+  /* 基于图片宽高比计算高度：1406/1080 ≈ 1.302 */
+  /* 容器宽度是100%，但最大600px，高度 = 宽度 * 1.302 */
+  height: calc(100vw * 1.302);
+  max-height: calc(600px * 1.302);
+  min-height: 400px; /* 最小高度确保滑块可见 */
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 100%); /* 备用背景 */
+  border-radius: 8px;
 }
 
 /* 核心：背景图作为定位基准，等比缩放，禁止变形 */
 .arm-bg {
   display: block;
   width: 100%;
-  height: auto;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain; /* 保持比例，完整显示 */
   opacity: 0.9;
   border-radius: 8px;
   margin: 0 auto;
+  background: transparent;
+}
+
+/* 图片加载失败时的提示 */
+.arm-bg::after {
+  content: '机械臂示意图';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #666;
+  font-size: 16px;
+  display: none;
 }
 
 /* 滑块组基础样式：绝对定位+水平居中，JS接管top定位 */
@@ -219,7 +238,8 @@ footer button.secondary { background: #64748b; }
 <div id="statusInfo">未连接蓝牙</div>
 
 <main>
-  <img class="arm-bg" src="jxb.jpg" />
+  <!-- 图片加载失败时使用备用方案 -->
+  <img class="arm-bg" src="jxb.jpg" onerror="handleImageError(this)" />
 
 
   <!-- 6组滑块：添加data-joint-y属性，绑定机械臂关节垂直百分比，JS动态定位 -->
@@ -228,27 +248,27 @@ footer button.secondary { background: #64748b; }
     <input type="range" min="0" max="6" value="3" data-slider-id="1" onmousedown="sliderDown(1, this)" ontouchstart="sliderDown(1, this)" onmouseup="sliderUp(1, this)" ontouchend="sliderUp(1, this)" oninput="sliderMove(1, this)">
     <button class="label-btn" id="R1">闭合</button>
   </div>
-  <div class="slider-group s2" data-joint-y="28">
+  <div class="slider-group s2" data-joint-y="27.5">
     <button class="label-btn" id="L2">左转</button>
     <input type="range" min="0" max="6" value="3" data-slider-id="2" onmousedown="sliderDown(2, this)" ontouchstart="sliderDown(2, this)" onmouseup="sliderUp(2, this)" ontouchend="sliderUp(2, this)" oninput="sliderMove(2, this)">
     <button class="label-btn" id="R2">右转</button>
   </div>
-  <div class="slider-group s3" data-joint-y="42">
+  <div class="slider-group s3" data-joint-y="42.8">
     <button class="label-btn" id="L3">向后</button>
     <input type="range" min="0" max="6" value="3" data-slider-id="3" onmousedown="sliderDown(3, this)" ontouchstart="sliderDown(3, this)" onmouseup="sliderUp(3, this)" ontouchend="sliderUp(3, this)" oninput="sliderMove(3, this)">
     <button class="label-btn" id="R3">向前</button>
   </div>
-  <div class="slider-group s4" data-joint-y="59">
+  <div class="slider-group s4" data-joint-y="58">
     <button class="label-btn" id="L4">向后</button>
     <input type="range" min="0" max="6" value="3" data-slider-id="4" onmousedown="sliderDown(4, this)" ontouchstart="sliderDown(4, this)" onmouseup="sliderUp(4, this)" ontouchend="sliderUp(4, this)" oninput="sliderMove(4, this)">
     <button class="label-btn" id="R4">向前</button>
   </div>
-  <div class="slider-group s5" data-joint-y="74">
+  <div class="slider-group s5" data-joint-y="73.2">
     <button class="label-btn" id="L5">向后</button>
     <input type="range" min="0" max="6" value="3" data-slider-id="5" onmousedown="sliderDown(5, this)" ontouchstart="sliderDown(5, this)" onmouseup="sliderUp(5, this)" ontouchend="sliderUp(5, this)" oninput="sliderMove(5, this)">
     <button class="label-btn" id="R5">向前</button>
   </div>
-  <div class="slider-group s6" data-joint-y="89">
+  <div class="slider-group s6" data-joint-y="88.7">
     <button class="label-btn" id="L6">左转</button>
     <input type="range" min="0" max="6" value="3" data-slider-id="6" onmousedown="sliderDown(6, this)" ontouchstart="sliderDown(6, this)" onmouseup="sliderUp(6, this)" ontouchend="sliderUp(6, this)" oninput="sliderMove(6, this)">
     <button class="label-btn" id="R6">右转</button>
@@ -303,6 +323,17 @@ let bleChar = null;
 let sliderTimers = {};
 // 滑块当前是否按住：key=滑块ID，value=boolean
 let sliderHeld = {};
+// 图片加载状态
+let imageLoaded = false;
+
+// 图片加载错误处理
+function handleImageError(img) {
+  console.log('图片加载失败，使用备用布局');
+  imageLoaded = false;
+  img.style.opacity = '0';
+  // 立即重新定位滑块（使用备用高度）
+  positionSliders();
+}
 
 // 【核心修正】6组滑块按钮指令精准匹配，严格按提供的指令配置
 const defaultConfigs = {
@@ -532,18 +563,35 @@ async function send(cmd) {
   }
 }
 
-// 【核心新增】动态定位滑块：基于图片实际高度和关节百分比，精准对齐
+// 【核心新增】动态定位滑块：基于容器高度和关节百分比，精准对齐
 function positionSliders() {
+  const mainContainer = document.querySelector('main');
   const bgImg = document.querySelector('.arm-bg');
-  // 确保图片加载完成且有高度
-  if (!bgImg.offsetHeight) return;
-  const imgHeight = bgImg.offsetHeight;
+  
+  // 如果图片已加载，使用图片高度；否则使用容器高度
+  let containerHeight;
+  if (imageLoaded && bgImg.offsetHeight > 0) {
+    containerHeight = bgImg.offsetHeight;
+  } else {
+    // 使用容器计算的高度（基于宽高比）
+    containerHeight = mainContainer.clientHeight;
+  }
+  
   document.querySelectorAll('.slider-group').forEach(group => {
     const jointYPercent = parseFloat(group.dataset.jointY);
     // 计算top值：关节百分比高度 - 滑块自身高度的一半，实现垂直居中对齐
-    const top = (imgHeight * jointYPercent / 100) - (group.offsetHeight / 2);
+    const top = (containerHeight * jointYPercent / 100) - (group.offsetHeight / 2);
     group.style.top = `${top}px`;
   });
+}
+
+// 图片加载成功处理
+function handleImageLoad(img) {
+  console.log('图片加载成功');
+  imageLoaded = true;
+  img.style.opacity = '0.9';
+  // 重新定位滑块
+  positionSliders();
 }
 
 // 页面加载完成初始化
@@ -554,15 +602,24 @@ window.onload = () => {
     sliderHeld[id] = false;
     sliderTimers[id] = null;
   });
+  
+  // 图片加载事件监听
+  const bgImg = document.querySelector('.arm-bg');
+  bgImg.addEventListener('load', function() {
+    handleImageLoad(this);
+  });
+  
+  // 如果图片已经缓存，可能不会触发load事件
+  if (bgImg.complete && bgImg.naturalHeight !== 0) {
+    handleImageLoad(bgImg);
+  }
+  
   // 首次定位滑块
-  positionSliders();
+  setTimeout(positionSliders, 100);
 };
 
-// 【核心新增】监听图片加载完成、窗口缩放，实时重新定位滑块
-document.querySelector('.arm-bg').addEventListener('load', positionSliders);
+// 监听窗口缩放，重新定位滑块
 window.addEventListener('resize', positionSliders);
-// 防止图片缓存导致load事件不触发，再执行一次
-setTimeout(positionSliders, 200);
 </script>
 
 </body>
