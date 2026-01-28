@@ -39,6 +39,21 @@ header button:active, header button.tap-active {
   background: #ff4444 !important; /* 红色背景，!important确保优先级 */
   color: #ffffff !important;
 }
+/* 蓝牙按钮连接中闪烁动画：1秒红/原色交替 */
+header button#bleConnectBtn.blink {
+  animation: blink 1s step-end infinite;
+}
+/* 蓝牙按钮连接成功固定蓝色 */
+header button#bleConnectBtn.connected {
+  background: #2196f3 !important;
+  color: #ffffff !important;
+}
+/* 闪烁动画关键帧 */
+@keyframes blink {
+  0% { background: #eee; color: #000; }
+  50% { background: #ff4444; color: #ffffff; }
+  100% { background: #eee; color: #000; }
+}
 
 /* 滑块侧边label-btn：点击变红+快速过渡，消除默认高亮 */
 .label-btn {
@@ -252,7 +267,8 @@ main {
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
   <div style="font-weight: bold;">机械臂控制系统</div>
-  <button onclick="connectBLE()">🔵 扫描连接</button>
+  <!-- 修改文字为连接蓝牙，添加唯一ID：bleConnectBtn -->
+  <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
 <div id="statusInfo">未连接蓝牙</div>
@@ -343,6 +359,8 @@ let sliderTimers = {};
 let sliderHeld = {};
 // 图片加载状态
 let imageLoaded = false;
+// 蓝牙按钮元素（全局获取，方便操作）
+const bleBtn = document.getElementById('bleConnectBtn');
 
 // ========== 新增：触摸/点击变红核心JS ==========
 document.addEventListener('DOMContentLoaded', function() {
@@ -593,9 +611,15 @@ function saveConfig() {
   closeConfig();
 }
 
-// 蓝牙BLE连接核心逻辑（UUID：ffe0/ffe1）
+// 蓝牙BLE连接核心逻辑（UUID：ffe0/ffe1）- 新增按钮闪烁/变蓝逻辑
 async function connectBLE() {
   const status = document.getElementById('statusInfo');
+  // 防止重复点击，先移除原有样式，添加闪烁样式
+  bleBtn.classList.remove('connected');
+  bleBtn.classList.add('blink');
+  // 禁用按钮，防止重复触发
+  bleBtn.disabled = true;
+
   try {
     const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
     const CHAR_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
@@ -607,11 +631,21 @@ async function connectBLE() {
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
     bleChar = await service.getCharacteristic(CHAR_UUID);
+    // 连接成功：移除闪烁，添加蓝色样式，更新文字/状态
+    bleBtn.classList.remove('blink');
+    bleBtn.classList.add('connected');
+    bleBtn.innerText = "🔵 已连蓝牙";
     status.innerText = "已连接: " + device.name;
     status.style.color = "green";
   } catch (e) {
+    // 连接失败：移除闪烁，恢复原始样式，更新状态
+    bleBtn.classList.remove('blink');
+    bleBtn.innerText = "🔵 连接蓝牙";
     status.innerText = "连接失败: " + e.message;
     status.style.color = "red";
+  } finally {
+    // 无论成功/失败，重新启用按钮
+    bleBtn.disabled = false;
   }
 }
 
