@@ -22,6 +22,7 @@ header {
   box-shadow: 0 1px 4px rgba(0,0,0,.1);
 }
 
+/* header按钮：新增触摸反馈 + 消除点击高亮 + 强化active */
 header button {
   border: none;
   background: #eee;
@@ -29,7 +30,62 @@ header button {
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent; /* 消除浏览器默认点击高亮 */
+  touch-action: manipulation; /* 禁用双击缩放，提升点击响应 */
+  transition: background 0.1s ease; /* 过渡动画，让反馈更顺滑 */
 }
+header button:active {
+  background: #d1d5db; /* 加深底色，明显色差反馈 */
+  transform: scale(0.98); /* 轻微缩小，模拟物理按钮按下 */
+}
+
+/* 滑块侧边label-btn：新增触摸反馈 + 消除点击高亮 */
+.label-btn {
+  width: 55px;
+  height: 32px;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: all 0.1s ease;
+}
+.label-btn:active { 
+  background: #1d4ed8; 
+  transform: scale(0.98); /* 按下轻微缩小 */
+}
+
+/* footer按钮：新增触摸反馈 + 消除点击高亮 + 强化active */
+footer button {
+  padding: 15px 10px;
+  font-size: 16px;
+  border-radius: 12px;
+  border: none;
+  background: #6366f1;
+  color: white;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: all 0.1s ease;
+}
+footer button:active { 
+  background: #4f46e5; 
+  transform: scale(0.98);
+}
+footer button.secondary { background: #64748b; }
+/* 补充secondary按钮的active样式，避免无反馈 */
+footer button.secondary:active {
+  background: #475569;
+  transform: scale(0.98);
+}
+
 
 /* 核心：main容器设置为固定高度，基于图片宽高比计算 */
 main {
