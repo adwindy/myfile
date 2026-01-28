@@ -22,7 +22,7 @@ header {
   box-shadow: 0 1px 4px rgba(0,0,0,.1);
 }
 
-/* header按钮：新增触摸反馈 + 消除点击高亮 + 强化active */
+/* header按钮：点击变红+快速过渡，消除默认高亮 */
 header button {
   border: none;
   background: #eee;
@@ -30,16 +30,17 @@ header button {
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent; /* 消除浏览器默认点击高亮 */
-  touch-action: manipulation; /* 禁用双击缩放，提升点击响应 */
-  transition: background 0.1s ease; /* 过渡动画，让反馈更顺滑 */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color 0.05s linear; /* 超快速过渡，点击无延迟 */
 }
-header button:active {
-  background: #d1d5db; /* 加深底色，明显色差反馈 */
-  transform: scale(0.98); /* 轻微缩小，模拟物理按钮按下 */
+/* 点击/触摸时直接变红，覆盖原有样式 */
+header button:active, header button.tap-active {
+  background: #ff4444 !important; /* 红色背景，!important确保优先级 */
+  color: #ffffff !important;
 }
 
-/* 滑块侧边label-btn：新增触摸反馈 + 消除点击高亮 */
+/* 滑块侧边label-btn：点击变红+快速过渡，消除默认高亮 */
 .label-btn {
   width: 55px;
   height: 32px;
@@ -55,14 +56,25 @@ header button:active {
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: all 0.1s ease;
+  transition: background-color 0.05s linear;
 }
-.label-btn:active { 
-  background: #1d4ed8; 
-  transform: scale(0.98); /* 按下轻微缩小 */
+/* 点击/触摸时直接变红，覆盖原有样式 */
+.label-btn:active, .label-btn.tap-active {
+  background: #ff4444 !important;
+  color: #ffffff !important;
 }
 
-/* footer按钮：新增触摸反馈 + 消除点击高亮 + 强化active */
+/* footer按钮：点击变红+快速过渡，消除默认高亮 */
+footer {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 600px;
+  margin: 20px auto 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
 footer button {
   padding: 15px 10px;
   font-size: 16px;
@@ -73,19 +85,17 @@ footer button {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: all 0.1s ease;
+  transition: background-color 0.05s linear;
 }
-footer button:active { 
-  background: #4f46e5; 
-  transform: scale(0.98);
+footer button.secondary {
+  background: #64748b;
 }
-footer button.secondary { background: #64748b; }
-/* 补充secondary按钮的active样式，避免无反馈 */
-footer button.secondary:active {
-  background: #475569;
-  transform: scale(0.98);
+/* 所有footer按钮点击统一变红，覆盖原有样式 */
+footer button:active, footer button.tap-active,
+footer button.secondary:active, footer button.secondary.tap-active {
+  background: #ff4444 !important;
+  color: #ffffff !important;
 }
-
 
 /* 核心：main容器设置为固定高度，基于图片宽高比计算 */
 main {
@@ -93,15 +103,13 @@ main {
   padding: 10px;
   max-width: 600px;
   margin: 0 auto;
-  /* 基于图片宽高比计算高度：1406/1080 ≈ 1.302 */
-  /* 容器宽度是100%，但最大600px，高度 = 宽度 * 1.302 */
   height: calc(100vw * 1.302);
   max-height: calc(600px * 1.302);
-  min-height: 400px; /* 最小高度确保滑块可见 */
+  min-height: 400px;
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
-  background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 100%); /* 备用背景 */
+  background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 100%);
   border-radius: 8px;
 }
 
@@ -110,23 +118,11 @@ main {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain; /* 保持比例，完整显示 */
+  object-fit: contain;
   opacity: 0.9;
   border-radius: 8px;
   margin: 0 auto;
   background: transparent;
-}
-
-/* 图片加载失败时的提示 */
-.arm-bg::after {
-  content: '机械臂示意图';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #666;
-  font-size: 16px;
-  display: none;
 }
 
 /* 滑块组基础样式：绝对定位+水平居中，JS接管top定位 */
@@ -143,23 +139,6 @@ main {
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   z-index: 10;
 }
-
-.label-btn {
-  width: 55px;
-  height: 32px;
-  border: none;
-  background: #3b82f6;
-  color: white;
-  border-radius: 16px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.label-btn:active { background: #1d4ed8; }
 
 /* 滑块样式优化：隐藏默认轨道，自定义三级吸附 */
 .slider-group input[type="range"] {
@@ -194,30 +173,6 @@ main {
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
   transition: all 0.1s ease;
 }
-
-footer {
-  padding: 10px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  max-width: 600px;
-  margin: 20px auto 10px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-footer button {
-  padding: 15px 10px;
-  font-size: 16px;
-  border-radius: 12px;
-  border: none;
-  background: #6366f1;
-  color: white;
-  cursor: pointer;
-}
-
-footer button:active { background: #4f46e5; }
-footer button.secondary { background: #64748b; }
 
 #configModal {
   position: fixed;
@@ -267,10 +222,19 @@ footer button.secondary { background: #64748b; }
   border-radius: 6px;
   border: none;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color 0.05s linear;
 }
 
 .btn-save { background: #3b82f6; color: white; }
 .btn-close { background: #eee; color: #333; }
+/* 弹窗按钮点击变红，覆盖原有样式 */
+.btn-save:active, .btn-save.tap-active,
+.btn-close:active, .btn-close.tap-active {
+  background: #ff4444 !important;
+  color: #ffffff !important;
+}
 
 #statusInfo {
   font-size: 12px;
@@ -296,7 +260,6 @@ footer button.secondary { background: #64748b; }
 <main>
   <!-- 图片加载失败时使用备用方案 -->
   <img class="arm-bg" src="jxb.jpg" onerror="handleImageError(this)" />
-
 
   <!-- 6组滑块：添加data-joint-y属性，绑定机械臂关节垂直百分比，JS动态定位 -->
   <div class="slider-group s1" data-joint-y="12">
@@ -330,7 +293,6 @@ footer button.secondary { background: #64748b; }
     <button class="label-btn" id="R6">右转</button>
   </div>
 </main>
-
 
 <footer>
   <button id="G1">G1</button>
@@ -381,6 +343,50 @@ let sliderTimers = {};
 let sliderHeld = {};
 // 图片加载状态
 let imageLoaded = false;
+
+// ========== 新增：触摸/点击变红核心JS ==========
+document.addEventListener('DOMContentLoaded', function() {
+  // 获取所有按钮元素
+  const allButtons = document.querySelectorAll('button');
+  
+  allButtons.forEach(btn => {
+    // 触摸屏触摸开始：添加变红类
+    btn.addEventListener('touchstart', function() {
+      this.classList.add('tap-active');
+    }, { passive: true });
+    
+    // 触摸屏触摸结束/离开/取消：移除变红类
+    btn.addEventListener('touchend', function() {
+      this.classList.remove('tap-active');
+    });
+    btn.addEventListener('touchmove', function(e) {
+      // 触摸移动超出按钮范围，移除变红类
+      const rect = this.getBoundingClientRect();
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+        this.classList.remove('tap-active');
+      }
+    }, { passive: true });
+    btn.addEventListener('touchcancel', function() {
+      this.classList.remove('tap-active');
+    });
+
+    // 鼠标按下：添加变红类
+    btn.addEventListener('mousedown', function() {
+      this.classList.add('tap-active');
+    });
+    
+    // 鼠标松开/离开：移除变红类
+    btn.addEventListener('mouseup', function() {
+      this.classList.remove('tap-active');
+    });
+    btn.addEventListener('mouseleave', function() {
+      this.classList.remove('tap-active');
+    });
+  });
+});
+// ========== 触摸/点击变红核心JS 结束 ==========
 
 // 图片加载错误处理
 function handleImageError(img) {
