@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>BLE 机械臂控制 - 6组滑块精准对齐版</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont;
+  background: #f5f5f5;
+  user-select: none;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.1);
+}
+
+header button {
+  border: none;
+  background: #eee;
+  font-size: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* 核心：main容器相对定位，高度由背景图决定，溢出隐藏 */
+main {
+  position: relative;
+  padding: 10px;
+  max-width: 600px;
+  margin: 0 auto;
+  height: auto;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 核心：背景图作为定位基准，等比缩放，禁止变形 */
+.arm-bg {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+  opacity: 0.9;
+  border-radius: 8px;
+  margin: 0 auto;
+}
+
+/* 滑块组基础样式：绝对定位+水平居中，JS接管top定位 */
+.slider-group {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.8);
+  padding: 6px 10px;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  z-index: 10;
+}
+
+.label-btn {
+  width: 55px;
+  height: 32px;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.label-btn:active { background: #1d4ed8; }
+
+/* 滑块样式优化：隐藏默认轨道，自定义三级吸附 */
+.slider-group input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  outline: none;
+  margin: 0;
+}
+/* 滑块拇指样式 */
+.slider-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.1s ease;
+}
+.slider-group input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.1s ease;
+}
+
+footer {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 600px;
+  margin: 20px auto 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+footer button {
+  padding: 15px 10px;
+  font-size: 16px;
+  border-radius: 12px;
+  border: none;
+  background: #6366f1;
+  color: white;
+  cursor: pointer;
+}
+
+footer button:active { background: #4f46e5; }
+footer button.secondary { background: #64748b; }
+
+#configModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+#configBox {
+  background: white;
+  padding: 20px;
+  width: 85%;
+  max-width: 400px;
+  border-radius: 12px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#configBox label {
+  font-size: 14px;
+  display: block;
+  margin-top: 12px;
+  color: #666;
+}
+
+#configBox input, #configBox select {
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.modal-btns {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.modal-btns button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-save { background: #3b82f6; color: white; }
+.btn-close { background: #eee; color: #333; }
+
+#statusInfo {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  margin-top: 5px;
+  height: 15px;
+  width: 100%;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <button onclick="openConfig()">⚙ 配置</button>
+  <div style="font-weight: bold;">机械臂控制系统</div>
+  <button onclick="connectBLE()">🔵 扫描连接</button>
+</header>
+
+<div id="statusInfo">未连接蓝牙</div>
+
+<main>
+  <img class="arm-bg" src="jxb.jpg" />
+
+
+  <!-- 6组滑块：添加data-joint-y属性，绑定机械臂关节垂直百分比，JS动态定位 -->
+  <div class="slider-group s1" data-joint-y="12">
+    <button class="label-btn" id="L1">张开</button>
+    <input type="range" min="0" max="6" value="3" data-slider-id="1" onmousedown="sliderDown(1, this)" ontouchstart="sliderDown(1, this)" onmouseup="sliderUp(1, this)" ontouchend="sliderUp(1, this)" oninput="sliderMove(1, this)">
+    <button class="label-btn" id="R1">闭合</button>
+  </div>
+  <div class="slider-group s2" data-joint-y="28">
+    <button class="label-btn" id="L2">左转</button>
+    <input type="range" min="0" max="6" value="3" data-slider-id="2" onmousedown="sliderDown(2, this)" ontouchstart="sliderDown(2, this)" onmouseup="sliderUp(2, this)" ontouchend="sliderUp(2, this)" oninput="sliderMove(2, this)">
+    <button class="label-btn" id="R2">右转</button>
+  </div>
+  <div class="slider-group s3" data-joint-y="42">
+    <button class="label-btn" id="L3">向后</button>
+    <input type="range" min="0" max="6" value="3" data-slider-id="3" onmousedown="sliderDown(3, this)" ontouchstart="sliderDown(3, this)" onmouseup="sliderUp(3, this)" ontouchend="sliderUp(3, this)" oninput="sliderMove(3, this)">
+    <button class="label-btn" id="R3">向前</button>
+  </div>
+  <div class="slider-group s4" data-joint-y="59">
+    <button class="label-btn" id="L4">向后</button>
+    <input type="range" min="0" max="6" value="3" data-slider-id="4" onmousedown="sliderDown(4, this)" ontouchstart="sliderDown(4, this)" onmouseup="sliderUp(4, this)" ontouchend="sliderUp(4, this)" oninput="sliderMove(4, this)">
+    <button class="label-btn" id="R4">向前</button>
+  </div>
+  <div class="slider-group s5" data-joint-y="74">
+    <button class="label-btn" id="L5">向后</button>
+    <input type="range" min="0" max="6" value="3" data-slider-id="5" onmousedown="sliderDown(5, this)" ontouchstart="sliderDown(5, this)" onmouseup="sliderUp(5, this)" ontouchend="sliderUp(5, this)" oninput="sliderMove(5, this)">
+    <button class="label-btn" id="R5">向前</button>
+  </div>
+  <div class="slider-group s6" data-joint-y="89">
+    <button class="label-btn" id="L6">左转</button>
+    <input type="range" min="0" max="6" value="3" data-slider-id="6" onmousedown="sliderDown(6, this)" ontouchstart="sliderDown(6, this)" onmouseup="sliderUp(6, this)" ontouchend="sliderUp(6, this)" oninput="sliderMove(6, this)">
+    <button class="label-btn" id="R6">右转</button>
+  </div>
+</main>
+
+
+<footer>
+  <button id="G1">G1</button>
+  <button id="G2">G2</button>
+  <button id="G3">G3</button>
+  <button id="G4">G4</button>
+  <button class="secondary" id="STOP">停止</button>
+  <button class="secondary" id="RESET">复位</button>
+</footer>
+
+<div id="configModal">
+  <div id="configBox">
+    <h3 style="margin:0">功能配置</h3>
+    <label>选择按钮序号</label>
+    <select id="cfgId" onchange="loadCurrentConfig()">
+      <optgroup label="滑块侧边按钮【6组完整】">
+        <option value="L1">滑块1-左(张开)</option><option value="R1">滑块1-右(闭合)</option>
+        <option value="L2">滑块2-左(左转)</option><option value="R2">滑块2-右(右转)</option>
+        <option value="L3">滑块3-左(向后)</option><option value="R3">滑块3-右(向前)</option>
+        <option value="L4">滑块4-左(向后)</option><option value="R4">滑块4-右(向前)</option>
+        <option value="L5">滑块5-左(向后)</option><option value="R5">滑块5-右(向前)</option>
+        <option value="L6">滑块6-左(左转)</option><option value="R6">滑块6-右(右转)</option>
+      </optgroup>
+      <optgroup label="底部功能按钮">
+        <option value="G1">按钮 G1</option><option value="G2">按钮 G2</option>
+        <option value="G3">按钮 G3</option><option value="G4">按钮 G4</option>
+        <option value="STOP">停止按钮</option><option value="RESET">复位按钮</option>
+      </optgroup>
+    </select>
+    <label>按钮显示名称</label>
+    <input id="cfgName">
+    <label>按下命令</label>
+    <input id="cfgPress">
+    <label>抬起命令 (可选)</label>
+    <input id="cfgRelease">
+    <div class="modal-btns">
+      <button class="btn-save" onclick="saveConfig()">保存</button>
+      <button class="btn-close" onclick="closeConfig()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let bleChar = null;
+// 滑块定时重发定时器存储：key=滑块ID，value=定时器ID
+let sliderTimers = {};
+// 滑块当前是否按住：key=滑块ID，value=boolean
+let sliderHeld = {};
+
+// 【核心修正】6组滑块按钮指令精准匹配，严格按提供的指令配置
+const defaultConfigs = {
+  // 第1组 #005：张开/闭合
+  L1: { name: "张开", press: "#005P0500T2000!", release: "#005PDST!" },
+  R1: { name: "闭合", press: "#005P2500T2000!", release: "#005PDST!" },
+  // 第2组 #004：左转/右转
+  L2: { name: "左转", press: "#004P0500T2000!", release: "#004PDST!" },
+  R2: { name: "右转", press: "#004P2500T2000!", release: "#004PDST!" },
+  // 第3组 #003：向后/向前
+  L3: { name: "向后", press: "#003P0500T2000!", release: "#003PDST!" },
+  R3: { name: "向前", press: "#003P2500T2000!", release: "#003PDST!" },
+  // 第4组 #002：向后/向前
+  L4: { name: "向后", press: "#002P0500T2000!", release: "#002PDST!" },
+  R4: { name: "向前", press: "#002P2500T2000!", release: "#002PDST!" },
+  // 第5组 #001：向后/向前
+  L5: { name: "向后", press: "#001P2500T2000!", release: "#001PDST!" },
+  R5: { name: "向前", press: "#001P0500T2000!", release: "#001PDST!" },
+  // 第6组 #000：左转/右转【新增核心】
+  L6: { name: "左转", press: "#000P2500T2000!", release: "#000PDST!" },
+  R6: { name: "右转", press: "#000P0500T2000!", release: "#000PDST!" },
+  // 底部功能按钮
+  G1: { name: "G1", press: "$DBT:1,1!", release: "" },
+  G2: { name: "G2", press: "$DBT:2,1!", release: "" },
+  G3: { name: "G3", press: "$DBT:3,1!", release: "" },
+  G4: { name: "G4", press: "$DBT:4,1!", release: "" },
+  STOP: { name: "停止", press: "$DST!", release: "" },
+  RESET: { name: "复位", press: "$RST!", release: "" }
+};
+
+// 从本地存储加载配置，无则使用默认配置
+let buttonConfigs = JSON.parse(localStorage.getItem("btnCfgV3")) || defaultConfigs;
+
+// 初始化所有按钮（含6组滑块的12个侧边按钮）
+function initButtons() {
+  Object.keys(buttonConfigs).forEach(btnId => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const cfg = buttonConfigs[btnId];
+    btn.innerText = cfg.name || btnId;
+    // 移除旧事件，避免叠加
+    btn.removeEventListener('mousedown', handleBtnPress);
+    btn.removeEventListener('mouseup', handleBtnRelease);
+    btn.removeEventListener('touchstart', handleBtnPress);
+    btn.removeEventListener('touchend', handleBtnRelease);
+    // 绑定新事件
+    btn.addEventListener('mousedown', handleBtnPress);
+    btn.addEventListener('mouseup', handleBtnRelease);
+    btn.addEventListener('touchstart', handleBtnPress, { passive: false });
+    btn.addEventListener('touchend', handleBtnRelease, { passive: false });
+  });
+}
+
+// 按钮按下事件：发送按下指令（修复：先判断事件可取消再阻止默认行为）
+function handleBtnPress(e) {
+  // 仅当事件可取消时，才执行preventDefault，消除浏览器警告
+  if (e.cancelable) e.preventDefault();
+  const btnId = e.target.id;
+  const cfg = buttonConfigs[btnId];
+  if (cfg && cfg.press) send(cfg.press);
+}
+
+// 按钮抬起事件：发送抬起指令（无则不发）（修复：先判断事件可取消再阻止默认行为）
+function handleBtnRelease(e) {
+  // 仅当事件可取消时，才执行preventDefault，消除浏览器警告
+  if (e.cancelable) e.preventDefault();
+  const btnId = e.target.id;
+  const cfg = buttonConfigs[btnId];
+  if (cfg && cfg.release) send(cfg.release);
+}
+
+// 【核心】滑块按下事件：标记按住状态，立即执行级别判断和指令发送
+function sliderDown(sliderId, sliderEl) {
+  sliderHeld[sliderId] = true;
+  judgeSliderLevel(sliderId, sliderEl);
+}
+
+// 【核心】滑块拖动事件：实时吸附到最近级别，更新指令
+function sliderMove(sliderId, sliderEl) {
+  if (!sliderHeld[sliderId]) return;
+  judgeSliderLevel(sliderId, sliderEl, true);
+}
+
+// 【核心】滑块抬起事件：清除定时器，回弹到中间（3级），不发送指令
+function sliderUp(sliderId, sliderEl) {
+  sliderHeld[sliderId] = false;
+  // 清除当前滑块的定时器，停止重发
+  if (sliderTimers[sliderId]) {
+    clearInterval(sliderTimers[sliderId]);
+    delete sliderTimers[sliderId];
+  }
+  // 立即回弹到中间位置（value=3），无动画
+  sliderEl.value = 3;
+}
+
+// 【核心】判断滑块级别+自动吸附+计算指令+定时重发
+function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
+  let currentVal = parseInt(sliderEl.value);
+  // 7个档位：0(左3)、1(左2)、2(左1)、3(中间)、4(右1)、5(右2)、6(右3)
+  const levels = [0, 1, 2, 3, 4, 5, 6];
+  // 自动吸附到最近级别
+  const nearestLevel = levels.reduce((a, b) => Math.abs(b - currentVal) < Math.abs(a - currentVal) ? b : a);
+  sliderEl.value = nearestLevel;
+
+  // 中间级别（3）：无操作，清除定时器
+  if (nearestLevel === 3) {
+    if (sliderTimers[sliderId]) {
+      clearInterval(sliderTimers[sliderId]);
+      delete sliderTimers[sliderId];
+    }
+    return;
+  }
+
+  // 非中间级别：匹配对应左右按钮ID（L6/R6为第6组新增）
+  const leftBtnId = `L${sliderId}`;
+  const rightBtnId = `R${sliderId}`;
+  const targetBtnId = nearestLevel < 3 ? leftBtnId : rightBtnId;
+  const originalCmd = buttonConfigs[targetBtnId]?.press;
+  
+  // 无指令或蓝牙未连接，直接返回
+  if (!originalCmd || !bleChar) return;
+
+  // 计算当前级别（左1/2/3 或 右1/2/3）
+  const level = nearestLevel < 3 ? 3 - nearestLevel : nearestLevel - 3;
+  // 按级别计算新指令（T值2/3/1/3取整）
+  const newCmd = calculateLevelCmd(originalCmd, level);
+  if (!newCmd) return;
+
+  // 首次按下/拖动：立即发送一次指令
+  if (!isMoving || !sliderTimers[sliderId]) {
+    send(newCmd);
+  }
+
+  // 提取T值作为定时重发间隔（毫秒）
+  const tMatch = newCmd.match(/T(\d+)!/);
+  const interval = tMatch ? parseInt(tMatch[1]) : 2000;
+
+  // 清除旧定时器，创建新定时器按间隔重发
+  if (sliderTimers[sliderId]) clearInterval(sliderTimers[sliderId]);
+  sliderTimers[sliderId] = setInterval(() => {
+    if (sliderHeld[sliderId]) send(newCmd);
+  }, interval);
+}
+
+// 【核心】按级别计算指令：1级原T值，2级T×2/3取整，3级T×1/3取整
+function calculateLevelCmd(originalCmd, level) {
+  // 匹配指令格式：#XXX PXXX TXXX! 或 #XXXPTXXX!（兼容无空格情况）
+  const cmdMatch = originalCmd.match(/(#\d+P\d+T)(\d+)(!)/);
+  if (!cmdMatch) return null;
+  const [, prefix, tVal, suffix] = cmdMatch;
+  const originalT = parseInt(tVal);
+
+  let newT;
+  switch (level) {
+    case 1: newT = originalT; break;        // 1级：原始T值
+    case 2: newT = Math.floor(originalT * 2 / 3); break; // 2级：T×2/3 向下取整
+    case 3: newT = Math.floor(originalT * 1 / 3); break; // 3级：T×1/3 向下取整
+    default: return null;
+  }
+
+  // 拼接新指令，保持原格式
+  return `${prefix}${newT}${suffix}`;
+}
+
+// 配置弹窗：打开
+function openConfig() {
+  document.getElementById('configModal').style.display = "flex";
+  loadCurrentConfig();
+}
+
+// 配置弹窗：关闭
+function closeConfig() {
+  document.getElementById('configModal').style.display = "none";
+}
+
+// 加载当前选中按钮的配置
+function loadCurrentConfig() {
+  const id = document.getElementById('cfgId').value;
+  const cfg = buttonConfigs[id] || { name: "", press: "", release: "" };
+  document.getElementById('cfgName').value = cfg.name || "";
+  document.getElementById('cfgPress').value = cfg.press || "";
+  document.getElementById('cfgRelease').value = cfg.release || "";
+}
+
+// 保存按钮配置到本地存储
+function saveConfig() {
+  const id = document.getElementById('cfgId').value;
+  buttonConfigs[id] = {
+    name: document.getElementById('cfgName').value.trim(),
+    press: document.getElementById('cfgPress').value.trim(),
+    release: document.getElementById('cfgRelease').value.trim()
+  };
+  localStorage.setItem("btnCfgV3", JSON.stringify(buttonConfigs));
+  initButtons(); // 重新初始化按钮，应用新配置
+  closeConfig();
+}
+
+// 蓝牙BLE连接核心逻辑（UUID：ffe0/ffe1）
+async function connectBLE() {
+  const status = document.getElementById('statusInfo');
+  try {
+    const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+    const CHAR_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    });
+    status.innerText = "连接中...";
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    bleChar = await service.getCharacteristic(CHAR_UUID);
+    status.innerText = "已连接: " + device.name;
+    status.style.color = "green";
+  } catch (e) {
+    status.innerText = "连接失败: " + e.message;
+    status.style.color = "red";
+  }
+}
+
+// 发送指令到蓝牙设备
+async function send(cmd) {
+  if (!cmd || !bleChar) return;
+  try {
+    await bleChar.writeValue(new TextEncoder().encode(cmd));
+  } catch (e) {
+    console.error("指令发送失败:", e);
+  }
+}
+
+// 【核心新增】动态定位滑块：基于图片实际高度和关节百分比，精准对齐
+function positionSliders() {
+  const bgImg = document.querySelector('.arm-bg');
+  // 确保图片加载完成且有高度
+  if (!bgImg.offsetHeight) return;
+  const imgHeight = bgImg.offsetHeight;
+  document.querySelectorAll('.slider-group').forEach(group => {
+    const jointYPercent = parseFloat(group.dataset.jointY);
+    // 计算top值：关节百分比高度 - 滑块自身高度的一半，实现垂直居中对齐
+    const top = (imgHeight * jointYPercent / 100) - (group.offsetHeight / 2);
+    group.style.top = `${top}px`;
+  });
+}
+
+// 页面加载完成初始化
+window.onload = () => {
+  initButtons();
+  // 初始化6组滑块的状态（1-6号滑块）
+  [1,2,3,4,5,6].forEach(id => {
+    sliderHeld[id] = false;
+    sliderTimers[id] = null;
+  });
+  // 首次定位滑块
+  positionSliders();
+};
+
+// 【核心新增】监听图片加载完成、窗口缩放，实时重新定位滑块
+document.querySelector('.arm-bg').addEventListener('load', positionSliders);
+window.addEventListener('resize', positionSliders);
+// 防止图片缓存导致load事件不触发，再执行一次
+setTimeout(positionSliders, 200);
+</script>
+
+</body>
+</html>
