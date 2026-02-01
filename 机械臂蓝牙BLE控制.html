@@ -22,7 +22,6 @@ header {
   box-shadow: 0 1px 4px rgba(0,0,0,.1);
 }
 
-/* header按钮：点击变红+快速过渡，消除默认高亮 */
 header button {
   border: none;
   background: #eee;
@@ -32,30 +31,25 @@ header button {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: background-color 0.05s linear; /* 超快速过渡，点击无延迟 */
+  transition: background-color 0.05s linear;
 }
-/* 点击/触摸时直接变红，覆盖原有样式 */
 header button:active, header button.tap-active {
-  background: #ff4444 !important; /* 红色背景，!important确保优先级 */
+  background: #ff4444 !important;
   color: #ffffff !important;
 }
-/* 蓝牙按钮连接中闪烁动画：1秒红/原色交替 */
 header button#bleConnectBtn.blink {
   animation: blink 1s step-end infinite;
 }
-/* 蓝牙按钮连接成功固定蓝色 */
 header button#bleConnectBtn.connected {
   background: #2196f3 !important;
   color: #ffffff !important;
 }
-/* 闪烁动画关键帧 */
 @keyframes blink {
   0% { background: #eee; color: #000; }
   50% { background: #ff4444; color: #ffffff; }
   100% { background: #eee; color: #000; }
 }
 
-/* 滑块侧边label-btn：点击变红+快速过渡，消除默认高亮 */
 .label-btn {
   width: 55px;
   height: 32px;
@@ -73,13 +67,11 @@ header button#bleConnectBtn.connected {
   touch-action: manipulation;
   transition: background-color 0.05s linear;
 }
-/* 点击/触摸时直接变红，覆盖原有样式 */
 .label-btn:active, .label-btn.tap-active {
   background: #ff4444 !important;
   color: #ffffff !important;
 }
 
-/* footer按钮：点击变红+快速过渡，消除默认高亮 */
 footer {
   padding: 10px;
   display: grid;
@@ -105,14 +97,12 @@ footer button {
 footer button.secondary {
   background: #64748b;
 }
-/* 所有footer按钮点击统一变红，覆盖原有样式 */
 footer button:active, footer button.tap-active,
 footer button.secondary:active, footer button.secondary.tap-active {
   background: #ff4444 !important;
   color: #ffffff !important;
 }
 
-/* 核心：main容器设置为固定高度，基于图片宽高比计算 */
 main {
   position: relative;
   padding: 10px;
@@ -128,7 +118,6 @@ main {
   border-radius: 8px;
 }
 
-/* 核心：背景图作为定位基准，等比缩放，禁止变形 */
 .arm-bg {
   display: block;
   width: 100%;
@@ -140,7 +129,6 @@ main {
   background: transparent;
 }
 
-/* 滑块组基础样式：绝对定位+水平居中，JS接管top定位 */
 .slider-group {
   position: absolute;
   left: 5%;
@@ -155,7 +143,6 @@ main {
   z-index: 10;
 }
 
-/* 滑块样式优化：隐藏默认轨道，自定义三级吸附 */
 .slider-group input[type="range"] {
   flex: 1;
   -webkit-appearance: none;
@@ -166,7 +153,6 @@ main {
   outline: none;
   margin: 0;
 }
-/* 滑块拇指样式 */
 .slider-group input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -244,7 +230,6 @@ main {
 
 .btn-save { background: #3b82f6; color: white; }
 .btn-close { background: #eee; color: #333; }
-/* 弹窗按钮点击变红，覆盖原有样式 */
 .btn-save:active, .btn-save.tap-active,
 .btn-close:active, .btn-close.tap-active {
   background: #ff4444 !important;
@@ -267,17 +252,13 @@ main {
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
   <div style="font-weight: bold;">机械臂控制系统</div>
-  <!-- 修改文字为连接蓝牙，添加唯一ID：bleConnectBtn -->
   <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
 <div id="statusInfo">未连接蓝牙</div>
 
 <main>
-  <!-- 图片加载失败时使用备用方案 -->
   <img class="arm-bg" src="jxb.jpg" onerror="handleImageError(this)" />
-
-  <!-- 6组滑块：添加data-joint-y属性，绑定机械臂关节垂直百分比，JS动态定位 -->
   <div class="slider-group s1" data-joint-y="12">
     <button class="label-btn" id="L1">张开</button>
     <input type="range" min="0" max="6" value="3" data-slider-id="1" onmousedown="sliderDown(1, this)" ontouchstart="sliderDown(1, this)" onmouseup="sliderUp(1, this)" ontouchend="sliderUp(1, this)" oninput="sliderMove(1, this)">
@@ -353,32 +334,22 @@ main {
 
 <script>
 let bleChar = null;
-// 滑块定时重发定时器存储：key=滑块ID，value=定时器ID
+let bleDevice = null; // 修复：新增设备实例，用于校验连接状态
 let sliderTimers = {};
-// 滑块当前是否按住：key=滑块ID，value=boolean
 let sliderHeld = {};
-// 图片加载状态
 let imageLoaded = false;
-// 蓝牙按钮元素（全局获取，方便操作）
 const bleBtn = document.getElementById('bleConnectBtn');
 
-// ========== 新增：触摸/点击变红核心JS ==========
 document.addEventListener('DOMContentLoaded', function() {
-  // 获取所有按钮元素
   const allButtons = document.querySelectorAll('button');
-  
   allButtons.forEach(btn => {
-    // 触摸屏触摸开始：添加变红类
     btn.addEventListener('touchstart', function() {
       this.classList.add('tap-active');
     }, { passive: true });
-    
-    // 触摸屏触摸结束/离开/取消：移除变红类
     btn.addEventListener('touchend', function() {
       this.classList.remove('tap-active');
     });
     btn.addEventListener('touchmove', function(e) {
-      // 触摸移动超出按钮范围，移除变红类
       const rect = this.getBoundingClientRect();
       const x = e.touches[0].clientX;
       const y = e.touches[0].clientY;
@@ -389,13 +360,9 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.addEventListener('touchcancel', function() {
       this.classList.remove('tap-active');
     });
-
-    // 鼠标按下：添加变红类
     btn.addEventListener('mousedown', function() {
       this.classList.add('tap-active');
     });
-    
-    // 鼠标松开/离开：移除变红类
     btn.addEventListener('mouseup', function() {
       this.classList.remove('tap-active');
     });
@@ -404,38 +371,27 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 });
-// ========== 触摸/点击变红核心JS 结束 ==========
 
-// 图片加载错误处理
 function handleImageError(img) {
   console.log('图片加载失败，使用备用布局');
   imageLoaded = false;
   img.style.opacity = '0';
-  // 立即重新定位滑块（使用备用高度）
   positionSliders();
 }
 
-// 【核心修正】6组滑块按钮指令精准匹配，严格按提供的指令配置
 const defaultConfigs = {
-  // 第1组 #005：张开/闭合
   L1: { name: "张开", press: "#005P0500T2000!", release: "#005PDST!" },
   R1: { name: "闭合", press: "#005P2500T2000!", release: "#005PDST!" },
-  // 第2组 #004：左转/右转
   L2: { name: "左转", press: "#004P0500T2000!", release: "#004PDST!" },
   R2: { name: "右转", press: "#004P2500T2000!", release: "#004PDST!" },
-  // 第3组 #003：向后/向前
   L3: { name: "向后", press: "#003P0500T2000!", release: "#003PDST!" },
   R3: { name: "向前", press: "#003P2500T2000!", release: "#003PDST!" },
-  // 第4组 #002：向后/向前
   L4: { name: "向后", press: "#002P0500T2000!", release: "#002PDST!" },
   R4: { name: "向前", press: "#002P2500T2000!", release: "#002PDST!" },
-  // 第5组 #001：向后/向前
   L5: { name: "向后", press: "#001P2500T2000!", release: "#001PDST!" },
   R5: { name: "向前", press: "#001P0500T2000!", release: "#001PDST!" },
-  // 第6组 #000：左转/右转【新增核心】
   L6: { name: "左转", press: "#000P2500T2000!", release: "#000PDST!" },
   R6: { name: "右转", press: "#000P0500T2000!", release: "#000PDST!" },
-  // 底部功能按钮
   G1: { name: "G1", press: "$DBT:1,1!", release: "" },
   G2: { name: "G2", press: "$DBT:2,1!", release: "" },
   G3: { name: "G3", press: "$DBT:3,1!", release: "" },
@@ -444,22 +400,18 @@ const defaultConfigs = {
   RESET: { name: "复位", press: "$RST!", release: "" }
 };
 
-// 从本地存储加载配置，无则使用默认配置
 let buttonConfigs = JSON.parse(localStorage.getItem("btnCfgV3")) || defaultConfigs;
 
-// 初始化所有按钮（含6组滑块的12个侧边按钮）
 function initButtons() {
   Object.keys(buttonConfigs).forEach(btnId => {
     const btn = document.getElementById(btnId);
     if (!btn) return;
     const cfg = buttonConfigs[btnId];
     btn.innerText = cfg.name || btnId;
-    // 移除旧事件，避免叠加
     btn.removeEventListener('mousedown', handleBtnPress);
     btn.removeEventListener('mouseup', handleBtnRelease);
     btn.removeEventListener('touchstart', handleBtnPress);
     btn.removeEventListener('touchend', handleBtnRelease);
-    // 绑定新事件
     btn.addEventListener('mousedown', handleBtnPress);
     btn.addEventListener('mouseup', handleBtnRelease);
     btn.addEventListener('touchstart', handleBtnPress, { passive: false });
@@ -467,58 +419,45 @@ function initButtons() {
   });
 }
 
-// 按钮按下事件：发送按下指令（修复：先判断事件可取消再阻止默认行为）
 function handleBtnPress(e) {
-  // 仅当事件可取消时，才执行preventDefault，消除浏览器警告
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
   const cfg = buttonConfigs[btnId];
   if (cfg && cfg.press) send(cfg.press);
 }
 
-// 按钮抬起事件：发送抬起指令（无则不发）（修复：先判断事件可取消再阻止默认行为）
 function handleBtnRelease(e) {
-  // 仅当事件可取消时，才执行preventDefault，消除浏览器警告
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
   const cfg = buttonConfigs[btnId];
   if (cfg && cfg.release) send(cfg.release);
 }
 
-// 【核心】滑块按下事件：标记按住状态，立即执行级别判断和指令发送
 function sliderDown(sliderId, sliderEl) {
   sliderHeld[sliderId] = true;
   judgeSliderLevel(sliderId, sliderEl);
 }
 
-// 【核心】滑块拖动事件：实时吸附到最近级别，更新指令
 function sliderMove(sliderId, sliderEl) {
   if (!sliderHeld[sliderId]) return;
   judgeSliderLevel(sliderId, sliderEl, true);
 }
 
-// 【核心】滑块抬起事件：清除定时器，回弹到中间（3级），不发送指令
 function sliderUp(sliderId, sliderEl) {
   sliderHeld[sliderId] = false;
-  // 清除当前滑块的定时器，停止重发
   if (sliderTimers[sliderId]) {
     clearInterval(sliderTimers[sliderId]);
     delete sliderTimers[sliderId];
   }
-  // 立即回弹到中间位置（value=3），无动画
   sliderEl.value = 3;
 }
 
-// 【核心】判断滑块级别+自动吸附+计算指令+定时重发
 function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   let currentVal = parseInt(sliderEl.value);
-  // 7个档位：0(左3)、1(左2)、2(左1)、3(中间)、4(右1)、5(右2)、6(右3)
   const levels = [0, 1, 2, 3, 4, 5, 6];
-  // 自动吸附到最近级别
   const nearestLevel = levels.reduce((a, b) => Math.abs(b - currentVal) < Math.abs(a - currentVal) ? b : a);
   sliderEl.value = nearestLevel;
 
-  // 中间级别（3）：无操作，清除定时器
   if (nearestLevel === 3) {
     if (sliderTimers[sliderId]) {
       clearInterval(sliderTimers[sliderId]);
@@ -527,40 +466,31 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
     return;
   }
 
-  // 非中间级别：匹配对应左右按钮ID（L6/R6为第6组新增）
   const leftBtnId = `L${sliderId}`;
   const rightBtnId = `R${sliderId}`;
   const targetBtnId = nearestLevel < 3 ? leftBtnId : rightBtnId;
   const originalCmd = buttonConfigs[targetBtnId]?.press;
   
-  // 无指令或蓝牙未连接，直接返回
   if (!originalCmd || !bleChar) return;
 
-  // 计算当前级别（左1/2/3 或 右1/2/3）
   const level = nearestLevel < 3 ? 3 - nearestLevel : nearestLevel - 3;
-  // 按级别计算新指令（T值2/3/1/3取整）
   const newCmd = calculateLevelCmd(originalCmd, level);
   if (!newCmd) return;
 
-  // 首次按下/拖动：立即发送一次指令
   if (!isMoving || !sliderTimers[sliderId]) {
     send(newCmd);
   }
 
-  // 提取T值作为定时重发间隔（毫秒）
   const tMatch = newCmd.match(/T(\d+)!/);
   const interval = tMatch ? parseInt(tMatch[1]) : 2000;
 
-  // 清除旧定时器，创建新定时器按间隔重发
   if (sliderTimers[sliderId]) clearInterval(sliderTimers[sliderId]);
   sliderTimers[sliderId] = setInterval(() => {
     if (sliderHeld[sliderId]) send(newCmd);
   }, interval);
 }
 
-// 【核心】按级别计算指令：1级原T值，2级T×2/3取整，3级T×1/3取整
 function calculateLevelCmd(originalCmd, level) {
-  // 匹配指令格式：#XXX PXXX TXXX! 或 #XXXPTXXX!（兼容无空格情况）
   const cmdMatch = originalCmd.match(/(#\d+P\d+T)(\d+)(!)/);
   if (!cmdMatch) return null;
   const [, prefix, tVal, suffix] = cmdMatch;
@@ -568,28 +498,24 @@ function calculateLevelCmd(originalCmd, level) {
 
   let newT;
   switch (level) {
-    case 1: newT = originalT; break;        // 1级：原始T值
-    case 2: newT = Math.floor(originalT * 2 / 3); break; // 2级：T×2/3 向下取整
-    case 3: newT = Math.floor(originalT * 1 / 3); break; // 3级：T×1/3 向下取整
+    case 1: newT = originalT; break;
+    case 2: newT = Math.floor(originalT * 2 / 3); break;
+    case 3: newT = Math.floor(originalT * 1 / 3); break;
     default: return null;
   }
 
-  // 拼接新指令，保持原格式
   return `${prefix}${newT}${suffix}`;
 }
 
-// 配置弹窗：打开
 function openConfig() {
   document.getElementById('configModal').style.display = "flex";
   loadCurrentConfig();
 }
 
-// 配置弹窗：关闭
 function closeConfig() {
   document.getElementById('configModal').style.display = "none";
 }
 
-// 加载当前选中按钮的配置
 function loadCurrentConfig() {
   const id = document.getElementById('cfgId').value;
   const cfg = buttonConfigs[id] || { name: "", press: "", release: "" };
@@ -598,7 +524,6 @@ function loadCurrentConfig() {
   document.getElementById('cfgRelease').value = cfg.release || "";
 }
 
-// 保存按钮配置到本地存储
 function saveConfig() {
   const id = document.getElementById('cfgId').value;
   buttonConfigs[id] = {
@@ -607,114 +532,177 @@ function saveConfig() {
     release: document.getElementById('cfgRelease').value.trim()
   };
   localStorage.setItem("btnCfgV3", JSON.stringify(buttonConfigs));
-  initButtons(); // 重新初始化按钮，应用新配置
+  initButtons();
   closeConfig();
 }
 
-// 蓝牙BLE连接核心逻辑（UUID：ffe0/ffe1）- 新增按钮闪烁/变蓝逻辑
+// 修复：重构蓝牙连接逻辑，增加特征值权限校验+连接状态监听
 async function connectBLE() {
   const status = document.getElementById('statusInfo');
-  // 防止重复点击，先移除原有样式，添加闪烁样式
   bleBtn.classList.remove('connected');
   bleBtn.classList.add('blink');
-  // 禁用按钮，防止重复触发
   bleBtn.disabled = true;
+
+  // 重置蓝牙状态
+  bleChar = null;
+  bleDevice = null;
 
   try {
     const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
     const CHAR_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+    
+    // 1. 请求设备
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
       optionalServices: [SERVICE_UUID]
     });
+    bleDevice = device; // 保存设备实例
     status.innerText = "连接中...";
+
+    // 监听设备断开事件
+    device.addEventListener('gattserverdisconnected', () => {
+      bleChar = null;
+      bleBtn.classList.remove('blink', 'connected');
+      bleBtn.innerText = "🔵 连接蓝牙";
+      status.innerText = "蓝牙已断开";
+      status.style.color = "orange";
+    });
+
+    // 2. 连接GATT服务器（增加重试）
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
-    bleChar = await service.getCharacteristic(CHAR_UUID);
-    // 连接成功：移除闪烁，添加蓝色样式，更新文字/状态
+    const characteristic = await service.getCharacteristic(CHAR_UUID);
+
+    // 3. 核心修复：校验特征值写入权限
+    if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+      throw new Error("特征值不支持写入操作");
+    }
+
+    // 4. 延迟确认，确保特征值就绪
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    bleChar = characteristic;
     bleBtn.classList.remove('blink');
     bleBtn.classList.add('connected');
     bleBtn.innerText = "🔵 已连蓝牙";
     status.innerText = "已连接: " + device.name;
     status.style.color = "green";
   } catch (e) {
-    // 连接失败：移除闪烁，恢复原始样式，更新状态
     bleBtn.classList.remove('blink');
     bleBtn.innerText = "🔵 连接蓝牙";
     status.innerText = "连接失败: " + e.message;
     status.style.color = "red";
+    console.error("蓝牙连接失败:", e);
   } finally {
-    // 无论成功/失败，重新启用按钮
     bleBtn.disabled = false;
   }
 }
 
-// 发送指令到蓝牙设备
+// 修复：重构send函数，增加多层校验+兼容不同写入API
 async function send(cmd) {
-  if (!cmd || !bleChar) return;
+  const status = document.getElementById('statusInfo');
+  
+  // 1. 基础校验
+  if (!cmd) {
+    console.warn("空指令，跳过发送");
+    return;
+  }
+  
+  // 2. 校验蓝牙连接状态
+  if (!bleChar || !bleDevice || !bleDevice.gatt.connected) {
+    status.innerText = "蓝牙未连接，无法发送指令";
+    status.style.color = "red";
+    console.error("蓝牙未连接");
+    return;
+  }
+
   try {
-    await bleChar.writeValue(new TextEncoder().encode(cmd));
+    const data = new TextEncoder().encode(cmd);
+    // 3. 兼容不同浏览器的写入API
+    if (bleChar.writeValueWithoutResponse) {
+      // 优先使用无响应写入（更稳定）
+      await bleChar.writeValueWithoutResponse(data);
+    } else if (bleChar.writeValueWithResponse) {
+      await bleChar.writeValueWithResponse(data);
+    } else if (bleChar.writeValue) {
+      await bleChar.writeValue(data);
+    } else {
+      throw new Error("浏览器不支持BLE写入操作");
+    }
+
+    // 更新状态提示
+    status.innerText = `发送成功: ${cmd.substring(0, 10)}...`;
+    status.style.color = "green";
+    // 2秒后恢复状态
+    setTimeout(() => {
+      if (bleDevice && bleDevice.gatt.connected) {
+        status.innerText = "已连接: " + bleDevice.name;
+      }
+    }, 2000);
   } catch (e) {
+    status.innerText = `发送失败: ${e.message}`;
+    status.style.color = "red";
     console.error("指令发送失败:", e);
+    
+    // 尝试重连（可选）
+    if (e.message.includes("GATT operation not permitted") && bleDevice) {
+      try {
+        await bleDevice.gatt.connect(); // 重新连接
+        status.innerText = "已重连蓝牙，可重试发送";
+      } catch (reconnectErr) {
+        status.innerText = "重连失败，请重新连接蓝牙";
+        bleChar = null;
+        bleBtn.classList.remove('connected');
+        bleBtn.innerText = "🔵 连接蓝牙";
+      }
+    }
   }
 }
 
-// 【核心新增】动态定位滑块：基于容器高度和关节百分比，精准对齐
 function positionSliders() {
   const mainContainer = document.querySelector('main');
   const bgImg = document.querySelector('.arm-bg');
   
-  // 如果图片已加载，使用图片高度；否则使用容器高度
   let containerHeight;
   if (imageLoaded && bgImg.offsetHeight > 0) {
     containerHeight = bgImg.offsetHeight;
   } else {
-    // 使用容器计算的高度（基于宽高比）
     containerHeight = mainContainer.clientHeight;
   }
   
   document.querySelectorAll('.slider-group').forEach(group => {
     const jointYPercent = parseFloat(group.dataset.jointY);
-    // 计算top值：关节百分比高度 - 滑块自身高度的一半，实现垂直居中对齐
     const top = (containerHeight * jointYPercent / 100) - (group.offsetHeight / 2);
     group.style.top = `${top}px`;
   });
 }
 
-// 图片加载成功处理
 function handleImageLoad(img) {
   console.log('图片加载成功');
   imageLoaded = true;
   img.style.opacity = '0.9';
-  // 重新定位滑块
   positionSliders();
 }
 
-// 页面加载完成初始化
 window.onload = () => {
   initButtons();
-  // 初始化6组滑块的状态（1-6号滑块）
   [1,2,3,4,5,6].forEach(id => {
     sliderHeld[id] = false;
     sliderTimers[id] = null;
   });
   
-  // 图片加载事件监听
   const bgImg = document.querySelector('.arm-bg');
   bgImg.addEventListener('load', function() {
     handleImageLoad(this);
   });
   
-  // 如果图片已经缓存，可能不会触发load事件
   if (bgImg.complete && bgImg.naturalHeight !== 0) {
     handleImageLoad(bgImg);
   }
   
-  // 首次定位滑块
   setTimeout(positionSliders, 100);
 };
 
-// 监听窗口缩放，重新定位滑块
 window.addEventListener('resize', positionSliders);
 </script>
 
