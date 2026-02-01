@@ -333,8 +333,9 @@ main {
 </div>
 
 <script>
-let bleChar = null;
-let bleDevice = null; // 修复：新增设备实例，用于校验连接状态
+// 全局变量明确绑定到window，避免作用域冲突
+window.bleChar = null;
+window.bleDevice = null; 
 let sliderTimers = {};
 let sliderHeld = {};
 let imageLoaded = false;
@@ -471,7 +472,7 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   const targetBtnId = nearestLevel < 3 ? leftBtnId : rightBtnId;
   const originalCmd = buttonConfigs[targetBtnId]?.press;
   
-  if (!originalCmd || !bleChar) return;
+  if (!originalCmd || !window.bleChar) return;
 
   const level = nearestLevel < 3 ? 3 - nearestLevel : nearestLevel - 3;
   const newCmd = calculateLevelCmd(originalCmd, level);
@@ -536,7 +537,7 @@ function saveConfig() {
   closeConfig();
 }
 
-// 修复：重构蓝牙连接逻辑，增加特征值权限校验+连接状态监听
+// 核心修复：替换为可写入的ffe2特征值UUID
 async function connectBLE() {
   const status = document.getElementById('statusInfo');
   bleBtn.classList.remove('connected');
@@ -544,36 +545,37 @@ async function connectBLE() {
   bleBtn.disabled = true;
 
   // 重置蓝牙状态
-  bleChar = null;
-  bleDevice = null;
+  window.bleChar = null;
+  window.bleDevice = null;
 
   try {
     const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
-    const CHAR_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+    // 关键修改：ffe1 → ffe2（可写入特征值）
+    const CHAR_UUID = '0000ffe2-0000-1000-8000-00805f9b34fb';
     
     // 1. 请求设备
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
       optionalServices: [SERVICE_UUID]
     });
-    bleDevice = device; // 保存设备实例
+    window.bleDevice = device; // 保存设备实例到window
     status.innerText = "连接中...";
 
     // 监听设备断开事件
     device.addEventListener('gattserverdisconnected', () => {
-      bleChar = null;
+      window.bleChar = null;
       bleBtn.classList.remove('blink', 'connected');
       bleBtn.innerText = "🔵 连接蓝牙";
       status.innerText = "蓝牙已断开";
       status.style.color = "orange";
     });
 
-    // 2. 连接GATT服务器（增加重试）
+    // 2. 连接GATT服务器
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
     const characteristic = await service.getCharacteristic(CHAR_UUID);
 
-    // 3. 核心修复：校验特征值写入权限
+    // 3. 校验特征值写入权限（双重确认）
     if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
       throw new Error("特征值不支持写入操作");
     }
@@ -581,12 +583,14 @@ async function connectBLE() {
     // 4. 延迟确认，确保特征值就绪
     await new Promise(resolve => setTimeout(resolve, 200));
     
-    bleChar = characteristic;
+    window.bleChar = characteristic;
     bleBtn.classList.remove('blink');
     bleBtn.classList.add('connected');
     bleBtn.innerText = "🔵 已连蓝牙";
     status.innerText = "已连接: " + device.name;
     status.style.color = "green";
+    console.log("【成功】连接蓝牙，特征值UUID：", characteristic.uuid);
+    console.log("【成功】写入权限：", characteristic.properties.write, characteristic.properties.writeWithoutResponse);
   } catch (e) {
     bleBtn.classList.remove('blink');
     bleBtn.innerText = "🔵 连接蓝牙";
@@ -598,9 +602,12 @@ async function connectBLE() {
   }
 }
 
-// 修复：重构send函数，增加多层校验+兼容不同写入API
+// 核心修复：强制使用window全局变量，避免作用域冲突
 async function send(cmd) {
   const status = document.getElementById('statusInfo');
+  // 强制获取全局变量
+  const bleChar = window.bleChar;
+  const bleDevice = window.bleDevice;
   
   // 1. 基础校验
   if (!cmd) {
@@ -612,18 +619,15 @@ async function send(cmd) {
   if (!bleChar || !bleDevice || !bleDevice.gatt.connected) {
     status.innerText = "蓝牙未连接，无法发送指令";
     status.style.color = "red";
-    console.error("蓝牙未连接");
+    console.error("蓝牙未连接：bleChar=", bleChar, "bleDevice.connected=", bleDevice?.gatt?.connected);
     return;
   }
 
   try {
     const data = new TextEncoder().encode(cmd);
-    // 3. 兼容不同浏览器的写入API
+    // 3. 优先使用无响应写入（BLE设备更兼容）
     if (bleChar.writeValueWithoutResponse) {
-      // 优先使用无响应写入（更稳定）
       await bleChar.writeValueWithoutResponse(data);
-    } else if (bleChar.writeValueWithResponse) {
-      await bleChar.writeValueWithResponse(data);
     } else if (bleChar.writeValue) {
       await bleChar.writeValue(data);
     } else {
@@ -639,21 +643,24 @@ async function send(cmd) {
         status.innerText = "已连接: " + bleDevice.name;
       }
     }, 2000);
+    console.log("【成功】发送指令：", cmd);
   } catch (e) {
     status.innerText = `发送失败: ${e.message}`;
     status.style.color = "red";
     console.error("指令发送失败:", e);
     
-    // 尝试重连（可选）
+    // 自动重连逻辑
     if (e.message.includes("GATT operation not permitted") && bleDevice) {
       try {
-        await bleDevice.gatt.connect(); // 重新连接
+        await bleDevice.gatt.connect();
         status.innerText = "已重连蓝牙，可重试发送";
+        console.log("【成功】自动重连蓝牙");
       } catch (reconnectErr) {
         status.innerText = "重连失败，请重新连接蓝牙";
-        bleChar = null;
+        window.bleChar = null;
         bleBtn.classList.remove('connected');
         bleBtn.innerText = "🔵 连接蓝牙";
+        console.error("重连失败:", reconnectErr);
       }
     }
   }
