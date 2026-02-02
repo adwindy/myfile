@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>BLE 机械臂控制 - 已修复锁定问题版</title>
+<title>BLE 机械臂控制 - 6组滑块精准对齐版</title>
 
 <style>
 body {
@@ -70,16 +70,6 @@ header button#bleConnectBtn.connected {
 .label-btn:active, .label-btn.tap-active {
   background: #ff4444 !important;
   color: #ffffff !important;
-}
-/* 禁用状态样式 */
-.label-btn.disabled, footer button.disabled, header button:not(#bleConnectBtn).disabled {
-  background: #94a3b8 !important;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-.slider-group input[type="range"].disabled {
-  pointer-events: none;
-  opacity: 0.7;
 }
 
 footer {
@@ -335,8 +325,8 @@ main {
     <input id="cfgPress">
     <label>抬起命令 (可选)</label>
     <input id="cfgRelease">
-    <label>抬起指令延迟(毫秒) <span style="color:#999">(默认200)</span></label>
-    <input id="cfgDelay" type="number" min="0" placeholder="200">
+    <label>抬起延迟(毫秒，默认200)</label>
+    <input id="cfgReleaseDelay" type="number" min="0" placeholder="200">
     <div class="modal-btns">
       <button class="btn-save" onclick="saveConfig()">保存</button>
       <button class="btn-close" onclick="closeConfig()">取消</button>
@@ -345,27 +335,25 @@ main {
 </div>
 
 <script>
-// 全局变量
+// 全局变量明确绑定到window，避免作用域冲突
 window.bleChar = null;
 window.bleDevice = null; 
 let sliderTimers = {};
 let sliderHeld = {};
 let imageLoaded = false;
+// 新增：记录当前滑块触发的按钮ID，用于回弹时发送抬起指令
 let sliderActiveBtn = {};
-// 核心状态变量
-let isOperationLocked = false;
+// 新增：管理抬起指令的延迟计时器
 let releaseTimers = {};
-const DEFAULT_DELAY = 200;
+// 新增：默认抬起延迟时间(ms)
+const DEFAULT_RELEASE_DELAY = 200;
 const bleBtn = document.getElementById('bleConnectBtn');
 
-// 为所有按钮添加触摸/点击的视觉反馈
 document.addEventListener('DOMContentLoaded', function() {
   const allButtons = document.querySelectorAll('button');
   allButtons.forEach(btn => {
     btn.addEventListener('touchstart', function() {
-      if (!isOperationLocked) {
-        this.classList.add('tap-active');
-      }
+      this.classList.add('tap-active');
     }, { passive: true });
     btn.addEventListener('touchend', function() {
       this.classList.remove('tap-active');
@@ -382,9 +370,7 @@ document.addEventListener('DOMContentLoaded', function() {
       this.classList.remove('tap-active');
     });
     btn.addEventListener('mousedown', function() {
-      if (!isOperationLocked) {
-        this.classList.add('tap-active');
-      }
+      this.classList.add('tap-active');
     });
     btn.addEventListener('mouseup', function() {
       this.classList.remove('tap-active');
@@ -395,42 +381,6 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// ==================== 核心修复：锁定与解锁函数 ====================
-function lockOperations(lock = true) {
-  if (lock === isOperationLocked) return;
-  
-  isOperationLocked = lock;
-  
-  const allControlButtons = document.querySelectorAll('.label-btn, footer button, header button:not(#bleConnectBtn)');
-  const allSliders = document.querySelectorAll('.slider-group input[type="range"]');
-  
-  allControlButtons.forEach(btn => {
-    btn.classList.toggle('disabled', lock);
-  });
-  allSliders.forEach(slider => {
-    slider.classList.toggle('disabled', lock);
-  });
-  
-  console.log(`操作控件${lock ? '锁定' : '解锁'}`);
-}
-
-// 核心修复点1：forceUnlockOperations 现在会重置状态并清除所有释放定时器
-function forceUnlockOperations() {
-  console.log('执行强制解锁');
-  isOperationLocked = false;
-  
-  // 移除所有禁用样式
-  document.querySelectorAll('.disabled').forEach(el => {
-    el.classList.remove('disabled');
-  });
-  
-  // 清除所有待执行的释放指令定时器（防止旧定时器在解锁后执行）
-  Object.keys(releaseTimers).forEach(timerId => {
-    clearTimeout(releaseTimers[timerId]);
-    delete releaseTimers[timerId];
-  });
-}
-
 function handleImageError(img) {
   console.log('图片加载失败，使用备用布局');
   imageLoaded = false;
@@ -439,24 +389,24 @@ function handleImageError(img) {
 }
 
 const defaultConfigs = {
-  L1: { name: "张开", press: "#005P0500T2000!", release: "#005PDST!", delay: DEFAULT_DELAY },
-  R1: { name: "闭合", press: "#005P2500T2000!", release: "#005PDST!", delay: DEFAULT_DELAY },
-  L2: { name: "左转", press: "#004P0500T2000!", release: "#004PDST!", delay: DEFAULT_DELAY },
-  R2: { name: "右转", press: "#004P2500T2000!", release: "#004PDST!", delay: DEFAULT_DELAY },
-  L3: { name: "向后", press: "#003P0500T2000!", release: "#003PDST!", delay: DEFAULT_DELAY },
-  R3: { name: "向前", press: "#003P2500T2000!", release: "#003PDST!", delay: DEFAULT_DELAY },
-  L4: { name: "向后", press: "#002P0500T2000!", release: "#002PDST!", delay: DEFAULT_DELAY },
-  R4: { name: "向前", press: "#002P2500T2000!", release: "#002PDST!", delay: DEFAULT_DELAY },
-  L5: { name: "向后", press: "#001P2500T2000!", release: "#001PDST!", delay: DEFAULT_DELAY },
-  R5: { name: "向前", press: "#001P0500T2000!", release: "#001PDST!", delay: DEFAULT_DELAY },
-  L6: { name: "左转", press: "#000P2500T2000!", release: "#000PDST!", delay: DEFAULT_DELAY },
-  R6: { name: "右转", press: "#000P0500T2000!", release: "#000PDST!", delay: DEFAULT_DELAY },
-  G1: { name: "G1", press: "$DBT:1,1!", release: "", delay: DEFAULT_DELAY },
-  G2: { name: "G2", press: "$DBT:2,1!", release: "", delay: DEFAULT_DELAY },
-  G3: { name: "G3", press: "$DBT:3,1!", release: "", delay: DEFAULT_DELAY },
-  G4: { name: "G4", press: "$DBT:4,1!", release: "", delay: DEFAULT_DELAY },
-  STOP: { name: "停止", press: "$DST!", release: "", delay: DEFAULT_DELAY },
-  RESET: { name: "复位", press: "$RST!", release: "", delay: DEFAULT_DELAY }
+  L1: { name: "张开", press: "#005P0500T2000!", release: "#005PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  R1: { name: "闭合", press: "#005P2500T2000!", release: "#005PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  L2: { name: "左转", press: "#004P0500T2000!", release: "#004PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  R2: { name: "右转", press: "#004P2500T2000!", release: "#004PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  L3: { name: "向后", press: "#003P0500T2000!", release: "#003PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  R3: { name: "向前", press: "#003P2500T2000!", release: "#003PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  L4: { name: "向后", press: "#002P0500T2000!", release: "#002PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  R4: { name: "向前", press: "#002P2500T2000!", release: "#002PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  L5: { name: "向后", press: "#001P2500T2000!", release: "#001PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  R5: { name: "向前", press: "#001P0500T2000!", release: "#001PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  L6: { name: "左转", press: "#000P2500T2000!", release: "#000PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  R6: { name: "右转", press: "#000P0500T2000!", release: "#000PDST!", releaseDelay: DEFAULT_RELEASE_DELAY },
+  G1: { name: "G1", press: "$DBT:1,1!", release: "", releaseDelay: DEFAULT_RELEASE_DELAY },
+  G2: { name: "G2", press: "$DBT:2,1!", release: "", releaseDelay: DEFAULT_RELEASE_DELAY },
+  G3: { name: "G3", press: "$DBT:3,1!", release: "", releaseDelay: DEFAULT_RELEASE_DELAY },
+  G4: { name: "G4", press: "$DBT:4,1!", release: "", releaseDelay: DEFAULT_RELEASE_DELAY },
+  STOP: { name: "停止", press: "$DST!", release: "", releaseDelay: DEFAULT_RELEASE_DELAY },
+  RESET: { name: "复位", press: "$RST!", release: "", releaseDelay: DEFAULT_RELEASE_DELAY }
 };
 
 let buttonConfigs = JSON.parse(localStorage.getItem("btnCfgV3")) || defaultConfigs;
@@ -479,98 +429,66 @@ function initButtons() {
 }
 
 function handleBtnPress(e) {
-  if (isOperationLocked) {
-    e.preventDefault();
-    return;
-  }
-  
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
-  const cfg = buttonConfigs[btnId];
-  
-  // 核心修复点2：清除该按钮之前的延迟定时器
+  // 清除该按钮的现有延迟计时器（如果有）
   if (releaseTimers[btnId]) {
     clearTimeout(releaseTimers[btnId]);
     delete releaseTimers[btnId];
   }
-  
-  if (cfg && cfg.press) {
-    lockOperations(true);
-    send(cfg.press).catch(err => {
-      console.error('发送按下指令失败:', err);
-      forceUnlockOperations();
-    });
-  }
+  const cfg = buttonConfigs[btnId];
+  if (cfg && cfg.press) send(cfg.press);
 }
 
 function handleBtnRelease(e) {
-  if (isOperationLocked && !releaseTimers[e.target.id]) {
-    e.preventDefault();
-    return;
-  }
-  
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
   const cfg = buttonConfigs[btnId];
   
-  // 再次清除可能的旧定时器
-  if (releaseTimers[btnId]) {
-    clearTimeout(releaseTimers[btnId]);
-    delete releaseTimers[btnId];
-  }
-  
+  // 如果有抬起指令，延迟发送
   if (cfg && cfg.release) {
-    const delay = cfg.delay || DEFAULT_DELAY;
-    console.log(`【按钮${btnId}】将延迟${delay}ms发送抬起指令`);
-    
+    // 清除现有计时器，避免重复执行
+    if (releaseTimers[btnId]) {
+      clearTimeout(releaseTimers[btnId]);
+    }
+    // 获取延迟时间，默认200ms
+    const delay = cfg.releaseDelay || DEFAULT_RELEASE_DELAY;
+    // 设置新的延迟计时器
     releaseTimers[btnId] = setTimeout(() => {
-      try {
-        send(cfg.release);
-        console.log(`【按钮${btnId}】延迟${delay}ms发送抬起指令成功`);
-      } catch (err) {
-        console.error(`【按钮${btnId}】发送抬起指令失败:`, err);
-      } finally {
-        forceUnlockOperations();
-        delete releaseTimers[btnId];
-      }
+      send(cfg.release);
+      console.log(`【按钮${btnId}】延迟${delay}ms发送抬起指令: ${cfg.release}`);
+      // 执行完成后清除计时器记录
+      delete releaseTimers[btnId];
     }, delay);
-  } else {
-    forceUnlockOperations();
   }
 }
 
 function sliderDown(sliderId, sliderEl) {
-  if (isOperationLocked) return;
-  
   sliderHeld[sliderId] = true;
-  const timerKey = `slider_${sliderId}`;
-  
-  // 核心修复点3：清除滑块之前的延迟定时器
-  if (releaseTimers[timerKey]) {
-    clearTimeout(releaseTimers[timerKey]);
-    delete releaseTimers[timerKey];
+  // 清除该滑块的现有延迟计时器
+  if (releaseTimers[`slider_${sliderId}`]) {
+    clearTimeout(releaseTimers[`slider_${sliderId}`]);
+    delete releaseTimers[`slider_${sliderId}`];
   }
-  
-  lockOperations(true);
   judgeSliderLevel(sliderId, sliderEl);
 }
 
 function sliderMove(sliderId, sliderEl) {
-  if (!sliderHeld[sliderId] || isOperationLocked) return;
+  if (!sliderHeld[sliderId]) return;
   judgeSliderLevel(sliderId, sliderEl, true);
 }
 
 function sliderUp(sliderId, sliderEl) {
   sliderHeld[sliderId] = false;
-  
-  // 核心修复点4：立即清除滑块的重复发送定时器
   if (sliderTimers[sliderId]) {
     clearInterval(sliderTimers[sliderId]);
     delete sliderTimers[sliderId];
   }
-  
-  sendSliderReleaseCmd(sliderId);
+  // 滑块回弹到中间位置
   sliderEl.value = 3;
+  // 延迟发送抬起指令
+  sendSliderReleaseCmd(sliderId);
+  // 清空当前激活的按钮记录
   delete sliderActiveBtn[sliderId];
 }
 
@@ -585,7 +503,9 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
       clearInterval(sliderTimers[sliderId]);
       delete sliderTimers[sliderId];
     }
+    // 滑块回到中间位置时延迟发送抬起指令
     sendSliderReleaseCmd(sliderId);
+    // 清空当前激活的按钮记录
     delete sliderActiveBtn[sliderId];
     return;
   }
@@ -593,6 +513,7 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   const leftBtnId = `L${sliderId}`;
   const rightBtnId = `R${sliderId}`;
   const targetBtnId = nearestLevel < 3 ? leftBtnId : rightBtnId;
+  // 记录当前激活的按钮ID
   sliderActiveBtn[sliderId] = targetBtnId;
   
   const originalCmd = buttonConfigs[targetBtnId]?.press;
@@ -604,10 +525,7 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   if (!newCmd) return;
 
   if (!isMoving || !sliderTimers[sliderId]) {
-    send(newCmd).catch(err => {
-      console.error(`【滑块${sliderId}】发送指令失败:`, err);
-      forceUnlockOperations();
-    });
+    send(newCmd);
   }
 
   const tMatch = newCmd.match(/T(\d+)!/);
@@ -619,39 +537,28 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   }, interval);
 }
 
+// 新增：发送滑块对应的抬起指令（带延迟）
 function sendSliderReleaseCmd(sliderId) {
   const activeBtnId = sliderActiveBtn[sliderId];
-  const timerKey = `slider_${sliderId}`;
+  if (!activeBtnId) return;
   
-  // 清除之前的延迟定时器
+  // 清除该滑块的现有延迟计时器
+  const timerKey = `slider_${sliderId}`;
   if (releaseTimers[timerKey]) {
     clearTimeout(releaseTimers[timerKey]);
-    delete releaseTimers[timerKey];
-  }
-  
-  if (!activeBtnId) {
-    forceUnlockOperations();
-    return;
   }
   
   const cfg = buttonConfigs[activeBtnId];
   if (cfg && cfg.release) {
-    const delay = cfg.delay || DEFAULT_DELAY;
-    console.log(`【滑块${sliderId}】将延迟${delay}ms发送抬起指令`);
-    
+    // 获取延迟时间，默认200ms
+    const delay = cfg.releaseDelay || DEFAULT_RELEASE_DELAY;
+    // 设置新的延迟计时器
     releaseTimers[timerKey] = setTimeout(() => {
-      try {
-        send(cfg.release);
-        console.log(`【滑块${sliderId}】延迟${delay}ms发送抬起指令成功`);
-      } catch (err) {
-        console.error(`【滑块${sliderId}】发送抬起指令失败:`, err);
-      } finally {
-        forceUnlockOperations();
-        delete releaseTimers[timerKey];
-      }
+      send(cfg.release);
+      console.log(`【滑块${sliderId}】延迟${delay}ms发送抬起指令: ${cfg.release}`);
+      // 执行完成后清除计时器记录
+      delete releaseTimers[timerKey];
     }, delay);
-  } else {
-    forceUnlockOperations();
   }
 }
 
@@ -683,68 +590,71 @@ function closeConfig() {
 
 function loadCurrentConfig() {
   const id = document.getElementById('cfgId').value;
-  const cfg = buttonConfigs[id] || { name: "", press: "", release: "", delay: DEFAULT_DELAY };
+  const cfg = buttonConfigs[id] || { name: "", press: "", release: "", releaseDelay: DEFAULT_RELEASE_DELAY };
   document.getElementById('cfgName').value = cfg.name || "";
   document.getElementById('cfgPress').value = cfg.press || "";
   document.getElementById('cfgRelease').value = cfg.release || "";
-  document.getElementById('cfgDelay').value = cfg.delay || DEFAULT_DELAY;
+  document.getElementById('cfgReleaseDelay').value = cfg.releaseDelay || DEFAULT_RELEASE_DELAY;
 }
 
 function saveConfig() {
   const id = document.getElementById('cfgId').value;
-  const delayValue = document.getElementById('cfgDelay').value;
-  const delay = delayValue ? parseInt(delayValue) : DEFAULT_DELAY;
-  
+  const releaseDelay = parseInt(document.getElementById('cfgReleaseDelay').value) || DEFAULT_RELEASE_DELAY;
   buttonConfigs[id] = {
     name: document.getElementById('cfgName').value.trim(),
     press: document.getElementById('cfgPress').value.trim(),
     release: document.getElementById('cfgRelease').value.trim(),
-    delay: delay >= 0 ? delay : DEFAULT_DELAY
+    releaseDelay: releaseDelay
   };
-  
   localStorage.setItem("btnCfgV3", JSON.stringify(buttonConfigs));
   initButtons();
   closeConfig();
 }
 
+// 核心修复：替换为可写入的ffe2特征值UUID
 async function connectBLE() {
   const status = document.getElementById('statusInfo');
   bleBtn.classList.remove('connected');
   bleBtn.classList.add('blink');
   bleBtn.disabled = true;
 
+  // 重置蓝牙状态
   window.bleChar = null;
   window.bleDevice = null;
 
   try {
     const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+    // 关键修改：ffe1 → ffe2（可写入特征值）
     const CHAR_UUID = '0000ffe2-0000-1000-8000-00805f9b34fb';
     
+    // 1. 请求设备
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
       optionalServices: [SERVICE_UUID]
     });
-    window.bleDevice = device;
+    window.bleDevice = device; // 保存设备实例到window
     status.innerText = "连接中...";
 
-    // 核心修复点5：蓝牙断开时强制解锁
+    // 监听设备断开事件
     device.addEventListener('gattserverdisconnected', () => {
       window.bleChar = null;
       bleBtn.classList.remove('blink', 'connected');
       bleBtn.innerText = "🔵 连接蓝牙";
       status.innerText = "蓝牙已断开";
       status.style.color = "orange";
-      forceUnlockOperations();
     });
 
+    // 2. 连接GATT服务器
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
     const characteristic = await service.getCharacteristic(CHAR_UUID);
 
+    // 3. 校验特征值写入权限（双重确认）
     if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
       throw new Error("特征值不支持写入操作");
     }
 
+    // 4. 延迟确认，确保特征值就绪
     await new Promise(resolve => setTimeout(resolve, 200));
     
     window.bleChar = characteristic;
@@ -754,38 +664,42 @@ async function connectBLE() {
     status.innerText = "已连接: " + device.name;
     status.style.color = "green";
     console.log("【成功】连接蓝牙，特征值UUID：", characteristic.uuid);
+    console.log("【成功】写入权限：", characteristic.properties.write, characteristic.properties.writeWithoutResponse);
   } catch (e) {
     bleBtn.classList.remove('blink');
     bleBtn.innerText = "🔵 连接蓝牙";
     status.innerText = "连接失败: " + e.message;
     status.style.color = "red";
     console.error("蓝牙连接失败:", e);
-    // 核心修复点6：连接失败时强制解锁
-    forceUnlockOperations();
   } finally {
     bleBtn.disabled = false;
   }
 }
 
+// 核心修复：强制使用window全局变量，避免作用域冲突
 async function send(cmd) {
   const status = document.getElementById('statusInfo');
+  // 强制获取全局变量
   const bleChar = window.bleChar;
   const bleDevice = window.bleDevice;
   
+  // 1. 基础校验
   if (!cmd) {
     console.warn("空指令，跳过发送");
-    return Promise.resolve();
+    return;
   }
   
+  // 2. 校验蓝牙连接状态
   if (!bleChar || !bleDevice || !bleDevice.gatt.connected) {
     status.innerText = "蓝牙未连接，无法发送指令";
     status.style.color = "red";
-    console.error("蓝牙未连接");
-    return Promise.reject(new Error("蓝牙未连接"));
+    console.error("蓝牙未连接：bleChar=", bleChar, "bleDevice.connected=", bleDevice?.gatt?.connected);
+    return;
   }
 
   try {
     const data = new TextEncoder().encode(cmd);
+    // 3. 优先使用无响应写入（BLE设备更兼容）
     if (bleChar.writeValueWithoutResponse) {
       await bleChar.writeValueWithoutResponse(data);
     } else if (bleChar.writeValue) {
@@ -794,20 +708,22 @@ async function send(cmd) {
       throw new Error("浏览器不支持BLE写入操作");
     }
 
+    // 更新状态提示
     status.innerText = `发送成功: ${cmd.substring(0, 10)}...`;
     status.style.color = "green";
+    // 2秒后恢复状态
     setTimeout(() => {
       if (bleDevice && bleDevice.gatt.connected) {
         status.innerText = "已连接: " + bleDevice.name;
       }
     }, 2000);
     console.log("【成功】发送指令：", cmd);
-    return Promise.resolve();
   } catch (e) {
     status.innerText = `发送失败: ${e.message}`;
     status.style.color = "red";
     console.error("指令发送失败:", e);
     
+    // 自动重连逻辑
     if (e.message.includes("GATT operation not permitted") && bleDevice) {
       try {
         await bleDevice.gatt.connect();
@@ -819,11 +735,8 @@ async function send(cmd) {
         bleBtn.classList.remove('connected');
         bleBtn.innerText = "🔵 连接蓝牙";
         console.error("重连失败:", reconnectErr);
-        forceUnlockOperations();
       }
     }
-    
-    return Promise.reject(e);
   }
 }
 
@@ -852,9 +765,41 @@ function handleImageLoad(img) {
   positionSliders();
 }
 
-// 核心修复点7：页面加载时确保解锁状态
 window.onload = () => {
-  forceUnlockOperations();
-  
   initButtons();
-  [1,2,3,4,5
+  [1,2,3,4,5,6].forEach(id => {
+    sliderHeld[id] = false;
+    sliderTimers[id] = null;
+    sliderActiveBtn[id] = null; // 初始化激活按钮记录
+    releaseTimers[`slider_${id}`] = null; // 初始化延迟计时器
+  });
+  
+  const bgImg = document.querySelector('.arm-bg');
+  bgImg.addEventListener('load', function() {
+    handleImageLoad(this);
+  });
+  
+  if (bgImg.complete && bgImg.naturalHeight !== 0) {
+    handleImageLoad(bgImg);
+  }
+  
+  setTimeout(positionSliders, 100);
+};
+
+window.addEventListener('resize', positionSliders);
+
+// 页面卸载时清除所有计时器
+window.addEventListener('beforeunload', function() {
+  // 清除按钮延迟计时器
+  Object.keys(releaseTimers).forEach(key => {
+    clearTimeout(releaseTimers[key]);
+  });
+  // 清除滑块计时器
+  Object.keys(sliderTimers).forEach(key => {
+    clearInterval(sliderTimers[key]);
+  });
+});
+</script>
+
+</body>
+</html>
