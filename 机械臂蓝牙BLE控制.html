@@ -71,6 +71,16 @@ header button#bleConnectBtn.connected {
   background: #ff4444 !important;
   color: #ffffff !important;
 }
+/* 禁用状态样式 */
+.label-btn.disabled, footer button.disabled, header button:not(#bleConnectBtn).disabled {
+  background: #94a3b8 !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.slider-group input[type="range"].disabled {
+  pointer-events: none;
+  opacity: 0.7;
+}
 
 footer {
   padding: 10px;
@@ -325,6 +335,8 @@ main {
     <input id="cfgPress">
     <label>抬起命令 (可选)</label>
     <input id="cfgRelease">
+    <label>抬起指令延迟(毫秒) <span style="color:#999">(默认200)</span></label>
+    <input id="cfgDelay" type="number" min="0" placeholder="200">
     <div class="modal-btns">
       <button class="btn-save" onclick="saveConfig()">保存</button>
       <button class="btn-close" onclick="closeConfig()">取消</button>
@@ -341,13 +353,21 @@ let sliderHeld = {};
 let imageLoaded = false;
 // 新增：记录当前滑块触发的按钮ID，用于回弹时发送抬起指令
 let sliderActiveBtn = {};
+// 新增：操作锁定状态和延迟定时器
+let isOperationLocked = false;
+let releaseTimers = {};
+// 默认延迟时间
+const DEFAULT_DELAY = 200;
 const bleBtn = document.getElementById('bleConnectBtn');
 
 document.addEventListener('DOMContentLoaded', function() {
   const allButtons = document.querySelectorAll('button');
   allButtons.forEach(btn => {
     btn.addEventListener('touchstart', function() {
-      this.classList.add('tap-active');
+      // 锁定状态下不触发点击效果
+      if (!isOperationLocked) {
+        this.classList.add('tap-active');
+      }
     }, { passive: true });
     btn.addEventListener('touchend', function() {
       this.classList.remove('tap-active');
@@ -364,7 +384,9 @@ document.addEventListener('DOMContentLoaded', function() {
       this.classList.remove('tap-active');
     });
     btn.addEventListener('mousedown', function() {
-      this.classList.add('tap-active');
+      if (!isOperationLocked) {
+        this.classList.add('tap-active');
+      }
     });
     btn.addEventListener('mouseup', function() {
       this.classList.remove('tap-active');
@@ -375,6 +397,31 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+// 新增：锁定/解锁操作控件
+function lockOperations(lock = true) {
+  isOperationLocked = lock;
+  
+  // 锁定/解锁所有按钮（除蓝牙连接按钮）
+  const allControlButtons = document.querySelectorAll('.label-btn, footer button, header button:not(#bleConnectBtn)');
+  allControlButtons.forEach(btn => {
+    if (lock) {
+      btn.classList.add('disabled');
+    } else {
+      btn.classList.remove('disabled');
+    }
+  });
+  
+  // 锁定/解锁所有滑块
+  const allSliders = document.querySelectorAll('.slider-group input[type="range"]');
+  allSliders.forEach(slider => {
+    if (lock) {
+      slider.classList.add('disabled');
+    } else {
+      slider.classList.remove('disabled');
+    }
+  });
+}
+
 function handleImageError(img) {
   console.log('图片加载失败，使用备用布局');
   imageLoaded = false;
@@ -383,24 +430,24 @@ function handleImageError(img) {
 }
 
 const defaultConfigs = {
-  L1: { name: "张开", press: "#005P0500T2000!", release: "#005PDST!" },
-  R1: { name: "闭合", press: "#005P2500T2000!", release: "#005PDST!" },
-  L2: { name: "左转", press: "#004P0500T2000!", release: "#004PDST!" },
-  R2: { name: "右转", press: "#004P2500T2000!", release: "#004PDST!" },
-  L3: { name: "向后", press: "#003P0500T2000!", release: "#003PDST!" },
-  R3: { name: "向前", press: "#003P2500T2000!", release: "#003PDST!" },
-  L4: { name: "向后", press: "#002P0500T2000!", release: "#002PDST!" },
-  R4: { name: "向前", press: "#002P2500T2000!", release: "#002PDST!" },
-  L5: { name: "向后", press: "#001P2500T2000!", release: "#001PDST!" },
-  R5: { name: "向前", press: "#001P0500T2000!", release: "#001PDST!" },
-  L6: { name: "左转", press: "#000P2500T2000!", release: "#000PDST!" },
-  R6: { name: "右转", press: "#000P0500T2000!", release: "#000PDST!" },
-  G1: { name: "G1", press: "$DBT:1,1!", release: "" },
-  G2: { name: "G2", press: "$DBT:2,1!", release: "" },
-  G3: { name: "G3", press: "$DBT:3,1!", release: "" },
-  G4: { name: "G4", press: "$DBT:4,1!", release: "" },
-  STOP: { name: "停止", press: "$DST!", release: "" },
-  RESET: { name: "复位", press: "$RST!", release: "" }
+  L1: { name: "张开", press: "#005P0500T2000!", release: "#005PDST!", delay: DEFAULT_DELAY },
+  R1: { name: "闭合", press: "#005P2500T2000!", release: "#005PDST!", delay: DEFAULT_DELAY },
+  L2: { name: "左转", press: "#004P0500T2000!", release: "#004PDST!", delay: DEFAULT_DELAY },
+  R2: { name: "右转", press: "#004P2500T2000!", release: "#004PDST!", delay: DEFAULT_DELAY },
+  L3: { name: "向后", press: "#003P0500T2000!", release: "#003PDST!", delay: DEFAULT_DELAY },
+  R3: { name: "向前", press: "#003P2500T2000!", release: "#003PDST!", delay: DEFAULT_DELAY },
+  L4: { name: "向后", press: "#002P0500T2000!", release: "#002PDST!", delay: DEFAULT_DELAY },
+  R4: { name: "向前", press: "#002P2500T2000!", release: "#002PDST!", delay: DEFAULT_DELAY },
+  L5: { name: "向后", press: "#001P2500T2000!", release: "#001PDST!", delay: DEFAULT_DELAY },
+  R5: { name: "向前", press: "#001P0500T2000!", release: "#001PDST!", delay: DEFAULT_DELAY },
+  L6: { name: "左转", press: "#000P2500T2000!", release: "#000PDST!", delay: DEFAULT_DELAY },
+  R6: { name: "右转", press: "#000P0500T2000!", release: "#000PDST!", delay: DEFAULT_DELAY },
+  G1: { name: "G1", press: "$DBT:1,1!", release: "", delay: DEFAULT_DELAY },
+  G2: { name: "G2", press: "$DBT:2,1!", release: "", delay: DEFAULT_DELAY },
+  G3: { name: "G3", press: "$DBT:3,1!", release: "", delay: DEFAULT_DELAY },
+  G4: { name: "G4", press: "$DBT:4,1!", release: "", delay: DEFAULT_DELAY },
+  STOP: { name: "停止", press: "$DST!", release: "", delay: DEFAULT_DELAY },
+  RESET: { name: "复位", press: "$RST!", release: "", delay: DEFAULT_DELAY }
 };
 
 let buttonConfigs = JSON.parse(localStorage.getItem("btnCfgV3")) || defaultConfigs;
@@ -423,38 +470,90 @@ function initButtons() {
 }
 
 function handleBtnPress(e) {
+  // 锁定状态下不处理
+  if (isOperationLocked) {
+    e.preventDefault();
+    return;
+  }
+  
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
   const cfg = buttonConfigs[btnId];
-  if (cfg && cfg.press) send(cfg.press);
+  
+  // 清除之前的延迟定时器
+  if (releaseTimers[btnId]) {
+    clearTimeout(releaseTimers[btnId]);
+    delete releaseTimers[btnId];
+  }
+  
+  if (cfg && cfg.press) {
+    // 锁定操作
+    lockOperations(true);
+    send(cfg.press);
+  }
 }
 
 function handleBtnRelease(e) {
+  if (isOperationLocked) {
+    e.preventDefault();
+    return;
+  }
+  
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
   const cfg = buttonConfigs[btnId];
-  if (cfg && cfg.release) send(cfg.release);
+  
+  if (cfg && cfg.release) {
+    // 获取延迟时间，默认200ms
+    const delay = cfg.delay || DEFAULT_DELAY;
+    
+    // 延迟发送抬起指令
+    releaseTimers[btnId] = setTimeout(() => {
+      send(cfg.release);
+      // 解锁操作
+      lockOperations(false);
+      delete releaseTimers[btnId];
+    }, delay);
+  } else {
+    // 无抬起指令时直接解锁
+    lockOperations(false);
+  }
 }
 
 function sliderDown(sliderId, sliderEl) {
+  // 锁定状态下不处理
+  if (isOperationLocked) return;
+  
   sliderHeld[sliderId] = true;
+  
+  // 清除之前的延迟定时器
+  if (releaseTimers[`slider_${sliderId}`]) {
+    clearTimeout(releaseTimers[`slider_${sliderId}`]);
+    delete releaseTimers[`slider_${sliderId}`];
+  }
+  
+  // 锁定操作
+  lockOperations(true);
   judgeSliderLevel(sliderId, sliderEl);
 }
 
 function sliderMove(sliderId, sliderEl) {
-  if (!sliderHeld[sliderId]) return;
+  if (!sliderHeld[sliderId] || isOperationLocked) return;
   judgeSliderLevel(sliderId, sliderEl, true);
 }
 
 function sliderUp(sliderId, sliderEl) {
   sliderHeld[sliderId] = false;
+  
   if (sliderTimers[sliderId]) {
     clearInterval(sliderTimers[sliderId]);
     delete sliderTimers[sliderId];
   }
-  // 滑块回弹到中间位置时发送抬起指令
+  
+  // 滑块回弹到中间位置时延迟发送抬起指令
   sendSliderReleaseCmd(sliderId);
   sliderEl.value = 3;
+  
   // 清空当前激活的按钮记录
   delete sliderActiveBtn[sliderId];
 }
@@ -470,7 +569,7 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
       clearInterval(sliderTimers[sliderId]);
       delete sliderTimers[sliderId];
     }
-    // 滑块回到中间位置时发送抬起指令
+    // 滑块回到中间位置时延迟发送抬起指令
     sendSliderReleaseCmd(sliderId);
     // 清空当前激活的按钮记录
     delete sliderActiveBtn[sliderId];
@@ -504,15 +603,36 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   }, interval);
 }
 
-// 新增：发送滑块对应的抬起指令
+// 新增：延迟发送滑块对应的抬起指令
 function sendSliderReleaseCmd(sliderId) {
   const activeBtnId = sliderActiveBtn[sliderId];
-  if (!activeBtnId) return;
+  if (!activeBtnId) {
+    // 无激活按钮时解锁
+    lockOperations(false);
+    return;
+  }
   
   const cfg = buttonConfigs[activeBtnId];
   if (cfg && cfg.release) {
-    send(cfg.release);
-    console.log(`【滑块${sliderId}】发送抬起指令: ${cfg.release}`);
+    // 清除之前的延迟定时器
+    if (releaseTimers[`slider_${sliderId}`]) {
+      clearTimeout(releaseTimers[`slider_${sliderId}`]);
+    }
+    
+    // 获取延迟时间，默认200ms
+    const delay = cfg.delay || DEFAULT_DELAY;
+    
+    // 延迟发送抬起指令
+    releaseTimers[`slider_${sliderId}`] = setTimeout(() => {
+      send(cfg.release);
+      // 解锁操作
+      lockOperations(false);
+      delete releaseTimers[`slider_${sliderId}`];
+      console.log(`【滑块${sliderId}】延迟${delay}ms发送抬起指令: ${cfg.release}`);
+    }, delay);
+  } else {
+    // 无抬起指令时直接解锁
+    lockOperations(false);
   }
 }
 
@@ -544,19 +664,26 @@ function closeConfig() {
 
 function loadCurrentConfig() {
   const id = document.getElementById('cfgId').value;
-  const cfg = buttonConfigs[id] || { name: "", press: "", release: "" };
+  const cfg = buttonConfigs[id] || { name: "", press: "", release: "", delay: DEFAULT_DELAY };
   document.getElementById('cfgName').value = cfg.name || "";
   document.getElementById('cfgPress').value = cfg.press || "";
   document.getElementById('cfgRelease').value = cfg.release || "";
+  document.getElementById('cfgDelay').value = cfg.delay || DEFAULT_DELAY;
 }
 
 function saveConfig() {
   const id = document.getElementById('cfgId').value;
+  const delayValue = document.getElementById('cfgDelay').value;
+  // 处理延迟值，为空则使用默认值
+  const delay = delayValue ? parseInt(delayValue) : DEFAULT_DELAY;
+  
   buttonConfigs[id] = {
     name: document.getElementById('cfgName').value.trim(),
     press: document.getElementById('cfgPress').value.trim(),
-    release: document.getElementById('cfgRelease').value.trim()
+    release: document.getElementById('cfgRelease').value.trim(),
+    delay: delay >= 0 ? delay : DEFAULT_DELAY // 确保延迟值非负
   };
+  
   localStorage.setItem("btnCfgV3", JSON.stringify(buttonConfigs));
   initButtons();
   closeConfig();
@@ -688,6 +815,9 @@ async function send(cmd) {
         console.error("重连失败:", reconnectErr);
       }
     }
+    
+    // 发送失败时解锁操作
+    lockOperations(false);
   }
 }
 
@@ -735,6 +865,16 @@ window.onload = () => {
   
   setTimeout(positionSliders, 100);
 };
+
+// 页面卸载时清除所有定时器
+window.addEventListener('beforeunload', () => {
+  Object.keys(releaseTimers).forEach(timerId => {
+    clearTimeout(releaseTimers[timerId]);
+  });
+  Object.keys(sliderTimers).forEach(timerId => {
+    clearInterval(sliderTimers[timerId]);
+  });
+});
 
 window.addEventListener('resize', positionSliders);
 </script>
