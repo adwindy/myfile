@@ -339,6 +339,8 @@ window.bleDevice = null;
 let sliderTimers = {};
 let sliderHeld = {};
 let imageLoaded = false;
+// 新增：记录当前滑块触发的按钮ID，用于回弹时发送抬起指令
+let sliderActiveBtn = {};
 const bleBtn = document.getElementById('bleConnectBtn');
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -450,7 +452,11 @@ function sliderUp(sliderId, sliderEl) {
     clearInterval(sliderTimers[sliderId]);
     delete sliderTimers[sliderId];
   }
+  // 滑块回弹到中间位置时发送抬起指令
+  sendSliderReleaseCmd(sliderId);
   sliderEl.value = 3;
+  // 清空当前激活的按钮记录
+  delete sliderActiveBtn[sliderId];
 }
 
 function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
@@ -464,12 +470,19 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
       clearInterval(sliderTimers[sliderId]);
       delete sliderTimers[sliderId];
     }
+    // 滑块回到中间位置时发送抬起指令
+    sendSliderReleaseCmd(sliderId);
+    // 清空当前激活的按钮记录
+    delete sliderActiveBtn[sliderId];
     return;
   }
 
   const leftBtnId = `L${sliderId}`;
   const rightBtnId = `R${sliderId}`;
   const targetBtnId = nearestLevel < 3 ? leftBtnId : rightBtnId;
+  // 记录当前激活的按钮ID
+  sliderActiveBtn[sliderId] = targetBtnId;
+  
   const originalCmd = buttonConfigs[targetBtnId]?.press;
   
   if (!originalCmd || !window.bleChar) return;
@@ -489,6 +502,18 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   sliderTimers[sliderId] = setInterval(() => {
     if (sliderHeld[sliderId]) send(newCmd);
   }, interval);
+}
+
+// 新增：发送滑块对应的抬起指令
+function sendSliderReleaseCmd(sliderId) {
+  const activeBtnId = sliderActiveBtn[sliderId];
+  if (!activeBtnId) return;
+  
+  const cfg = buttonConfigs[activeBtnId];
+  if (cfg && cfg.release) {
+    send(cfg.release);
+    console.log(`【滑块${sliderId}】发送抬起指令: ${cfg.release}`);
+  }
 }
 
 function calculateLevelCmd(originalCmd, level) {
@@ -696,6 +721,7 @@ window.onload = () => {
   [1,2,3,4,5,6].forEach(id => {
     sliderHeld[id] = false;
     sliderTimers[id] = null;
+    sliderActiveBtn[id] = null; // 初始化激活按钮记录
   });
   
   const bgImg = document.querySelector('.arm-bg');
