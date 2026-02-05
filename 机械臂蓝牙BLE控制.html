@@ -616,73 +616,111 @@ function saveConfig() {
 }
 
 // 核心修复：替换为可写入的ffe2特征值UUID
+// 优化后的蓝牙连接函数（适配电脑端，解决GATT断开错误）
 async function connectBLE() {
   const status = document.getElementById('statusInfo');
   bleBtn.classList.remove('connected');
   bleBtn.classList.add('blink');
   bleBtn.disabled = true;
 
-  // 重置蓝牙状态
+  // 重置所有蓝牙状态和计时器
   window.bleChar = null;
   window.bleDevice = null;
+  Object.keys(cmdTimeoutTimers).forEach(id => clearTimeout(cmdTimeoutTimers[id]));
+
+  // BLE服务和特征值UUID（与你的模块匹配）
+  const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+  const CHAR_UUID = '0000ffe2-0000-1000-8000-00805f9b34fb';
+  const MAX_RETRY = 2; // 电脑端增加重试次数，解决握手延迟
+  let retryCount = 0;
 
   try {
-    const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
-    // 关键修改：ffe1 → ffe2（可写入特征值）
-    const CHAR_UUID = '0000ffe2-0000-1000-8000-00805f9b34fb';
-    
-    // 1. 请求设备
+    // 1. 请求设备（电脑端需确保权限弹窗正常弹出）
+    status.innerText = "正在搜索蓝牙设备...";
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
-      optionalServices: [SERVICE_UUID]
+      optionalServices: [SERVICE_UUID] // 必须包含，否则电脑端无法获取服务
     });
-    window.bleDevice = device; // 保存设备实例到window
-    status.innerText = "连接中...";
+    window.bleDevice = device;
+    console.log("【已选择设备】:", device.name, device.id);
 
-    // 监听设备断开事件
-    device.addEventListener('gattserverdisconnected', () => {
-      window.bleChar = null;
-      bleBtn.classList.remove('blink', 'connected');
-      bleBtn.innerText = "🔵 连接蓝牙";
-      status.innerText = "蓝牙已断开";
-      status.style.color = "orange";
-    });
+    // 2. 监听断开事件（电脑端断开更频繁，需精准提示）
+    device.addEventListener('gattserverdisconnected', onDisconnected);
 
-    // 2. 连接GATT服务器
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    const characteristic = await service.getCharacteristic(CHAR_UUID);
+    // 3. 重试连接GATT服务器（电脑端核心：解决连接后瞬间断开）
+    while (retryCount <= MAX_RETRY) {
+      try {
+        status.innerText = `第${retryCount+1}次连接GATT服务器...`;
+        const server = await device.gatt.connect();
+        console.log("【GATT连接成功】:", server.connected);
 
-    // 3. 校验特征值写入权限（双重确认）
-    if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
-      throw new Error("特征值不支持写入操作");
+        // 关键：等待服务器完全就绪（电脑端GATT握手有延迟，比手机长）
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // 4. 获取服务和特征值（电脑端需校验服务是否存在）
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(CHAR_UUID);
+
+        // 5. 校验写入权限（电脑端严格校验，避免无效特征值）
+        if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+          throw new Error("特征值不支持写入，请检查UUID是否正确");
+        }
+
+        // 6. 启用通知（电脑端需确保通知开启成功）
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
+
+        // 连接成功，更新状态
+        window.bleChar = characteristic;
+        bleBtn.classList.remove('blink');
+        bleBtn.classList.add('connected');
+        bleBtn.innerText = "🔵 已连蓝牙";
+        status.innerText = `已连接: ${device.name}（重试${retryCount}次）`;
+        status.style.color = "green";
+        console.log("【最终连接成功】特征值UUID:", characteristic.uuid);
+        return; // 连接成功，退出重试循环
+
+      } catch (retryErr) {
+        retryCount++;
+        console.warn(`第${retryCount}次连接失败:`, retryErr.message);
+        if (retryCount > MAX_RETRY) throw retryErr; // 重试耗尽，抛出错误
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 重试间隔1秒
+      }
     }
 
-    // 4. 延迟确认，确保特征值就绪
-    await new Promise(resolve => setTimeout(resolve, 200));
-	
-	// === 新增：启用通知并监听返回数据 ===
-	await characteristic.startNotifications(); // 开启数据接收通知
-	characteristic.addEventListener('characteristicvaluechanged', handleBLEData); // 监听数据变化
-    
-    window.bleChar = characteristic;
-    bleBtn.classList.remove('blink');
-    bleBtn.classList.add('connected');
-    bleBtn.innerText = "🔵 已连蓝牙";
-    status.innerText = "已连接: " + device.name;
-    status.style.color = "green";
-    console.log("【成功】连接蓝牙，特征值UUID：", characteristic.uuid);
-    console.log("【成功】写入权限：", characteristic.properties.write, characteristic.properties.writeWithoutResponse);
   } catch (e) {
+    // 精准捕获电脑端常见错误，给出对应提示
     bleBtn.classList.remove('blink');
     bleBtn.innerText = "🔵 连接蓝牙";
-    status.innerText = "连接失败: " + e.message;
-    status.style.color = "red";
-    console.error("蓝牙连接失败:", e);
+    if (e.message.includes("GATT Server is disconnected")) {
+      status.innerText = "连接失败：蓝牙已断开，请重启电脑蓝牙/清除浏览器缓存";
+      status.style.color = "red";
+    } else if (e.message.includes("User cancelled")) {
+      status.innerText = "连接失败：未选择蓝牙设备";
+      status.style.color = "orange";
+    } else {
+      status.innerText = `连接失败: ${e.message.substring(0, 20)}...`;
+      status.style.color = "red";
+    }
+    console.error("蓝牙连接最终失败:", e);
   } finally {
     bleBtn.disabled = false;
   }
 }
+
+// 新增：断开事件处理（电脑端更精准的状态提示）
+function onDisconnected() {
+  window.bleChar = null;
+  window.bleDevice = null;
+  bleBtn.classList.remove('blink', 'connected');
+  bleBtn.innerText = "🔵 连接蓝牙";
+  const status = document.getElementById('statusInfo');
+  status.innerText = "蓝牙已断开：请检查设备距离/电脑蓝牙状态";
+  status.style.color = "orange";
+  // 清除所有超时计时器
+  Object.keys(cmdTimeoutTimers).forEach(id => clearTimeout(cmdTimeoutTimers[id]));
+}
+
 
 
 // 新增：处理蓝牙返回数据
@@ -863,3 +901,4 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
+
