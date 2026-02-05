@@ -348,6 +348,10 @@ let releaseTimers = {};
 // 新增：默认抬起延迟时间(ms)
 const DEFAULT_RELEASE_DELAY = 200;
 const bleBtn = document.getElementById('bleConnectBtn');
+// 新增：堵转保护全局变量
+const STALL_CURRENT_THRESHOLD = 800; // 堵转电流阈值（mA，根据舵机参数调整）
+const CMD_TIMEOUT = 2000; // 指令超时时间（ms）
+let cmdTimeoutTimers = {}; // 记录每个舵机的超时计时器
 
 document.addEventListener('DOMContentLoaded', function() {
   const allButtons = document.querySelectorAll('button');
@@ -656,6 +660,10 @@ async function connectBLE() {
 
     // 4. 延迟确认，确保特征值就绪
     await new Promise(resolve => setTimeout(resolve, 200));
+	
+	// === 新增：启用通知并监听返回数据 ===
+	await characteristic.startNotifications(); // 开启数据接收通知
+	characteristic.addEventListener('characteristicvaluechanged', handleBLEData); // 监听数据变化
     
     window.bleChar = characteristic;
     bleBtn.classList.remove('blink');
@@ -675,6 +683,41 @@ async function connectBLE() {
     bleBtn.disabled = false;
   }
 }
+
+
+// 新增：处理蓝牙返回数据
+function handleBLEData(event) {
+  const value = event.target.value;
+  // 将字节数据转为字符串（根据你的设备协议调整）
+  const decoder = new TextDecoder('utf-8');
+  const response = decoder.decode(value);
+  console.log("【接收】蓝牙返回数据：", response);
+
+  const status = document.getElementById('statusInfo');
+  // 解析舵机状态（示例：假设返回格式为 "#ANG:001,90!#CUR:001,500!" 表示舵机1角度90°，电流500mA）
+  if (response.includes("#ANG:")) {
+    // 提取角度数据（正则匹配，根据实际协议修改）
+    const angleMatch = response.match(/#ANG:(\d+),(\d+)!/);
+    if (angleMatch) {
+      const servoId = angleMatch[1];
+      const angle = angleMatch[2];
+      status.innerText = `舵机${servoId}当前角度：${angle}°`;
+      status.style.color = "blue";
+    }
+  }
+  // 解析堵转状态（示例：假设返回 "#STALL:001!" 表示舵机1堵转）
+  if (response.includes("#STALL:")) {
+    const stallMatch = response.match(/#STALL:(\d+)!/);
+    if (stallMatch) {
+      const servoId = stallMatch[1];
+      status.innerText = `⚠️ 舵机${servoId}堵转，已停止`;
+      status.style.color = "red";
+      // 触发停止指令，避免持续堵转
+      send("$DST!");
+    }
+  }
+}
+
 
 // 核心修复：强制使用window全局变量，避免作用域冲突
 async function send(cmd) {
@@ -708,6 +751,23 @@ async function send(cmd) {
       throw new Error("浏览器不支持BLE写入操作");
     }
 
+
+    // === 新增：指令超时保护 ===
+    const servoMatch = cmd.match(/#(\d+)P/);
+    if (servoMatch) {
+      const servoId = servoMatch[1];
+      if (cmdTimeoutTimers[servoId]) clearTimeout(cmdTimeoutTimers[servoId]);
+      cmdTimeoutTimers[servoId] = setTimeout(() => {
+        status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
+        status.style.color = "red";
+        send("$DST!");
+        // 回弹所有滑块
+        document.querySelectorAll('input[type="range"]').forEach(slider => {
+          slider.value = 3;
+        });
+      }, CMD_TIMEOUT);
+    }
+	
     // 更新状态提示
     status.innerText = `发送成功: ${cmd.substring(0, 10)}...`;
     status.style.color = "green";
