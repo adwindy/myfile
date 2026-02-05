@@ -667,7 +667,7 @@ async function connectBLE() {
         }
 
         // 6. 启用通知（电脑端需确保通知开启成功）
-        await characteristic.startNotifications();
+        //await characteristic.startNotifications();
         characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
 
         // 连接成功，更新状态
@@ -901,4 +901,5 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
+
 
