@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>BLE 机械臂控制 - 6组滑块精准对齐版</title>
+<title>BLE 机械臂控制</title>
 
 <style>
 body {
@@ -872,6 +872,9 @@ window.onload = () => {
     releaseTimers[`slider_${id}`] = null; // 初始化延迟计时器
   });
   
+  // 页面加载时就开始闪烁蓝牙连接按钮
+  bleBtn.classList.add('blink');
+  
   const bgImg = document.querySelector('.arm-bg');
   bgImg.addEventListener('load', function() {
     handleImageLoad(this);
@@ -901,7 +904,6 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
-
 
 
 
