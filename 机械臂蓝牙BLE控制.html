@@ -848,6 +848,7 @@ async function processCommandQueue() {
         if (cmdTimeoutTimers[servoId]) clearTimeout(cmdTimeoutTimers[servoId]);
         cmdTimeoutTimers[servoId] = setTimeout(() => {
           status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
+          console.error(`舵机${servoId}指令超时，强制停止`);
           status.style.color = "red";
           send("$DST!");
           // 回弹所有滑块
@@ -956,6 +957,7 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
+
 
 
 
