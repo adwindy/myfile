@@ -848,9 +848,9 @@ async function processCommandQueue() {
         if (cmdTimeoutTimers[servoId]) clearTimeout(cmdTimeoutTimers[servoId]);
         cmdTimeoutTimers[servoId] = setTimeout(() => {
           status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
-          console.error(`舵机${servoId}指令超时，强制停止`);
+          console.log(`舵机${servoId}指令超时，强制停止`);
           status.style.color = "red";
-          send("$DST!");
+          send("$DST!111");
           // 回弹所有滑块
           document.querySelectorAll('input[type="range"]').forEach(slider => {
             slider.value = 3;
@@ -957,6 +957,7 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
+
 
 
 
