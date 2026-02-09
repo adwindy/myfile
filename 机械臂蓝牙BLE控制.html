@@ -843,7 +843,8 @@ async function processCommandQueue() {
 
       // === 新增：指令超时保护 ===
       const servoMatch = cmd.match(/#(\d+)P/);
-      if (servoMatch) {
+      // 增加判断：如果是超时保护合集指令或$DST!指令，不设置超时计时器
+      if (servoMatch && !cmd.includes('{') && cmd !== "$DST!") {
         const servoId = servoMatch[1];
         if (cmdTimeoutTimers[servoId]) clearTimeout(cmdTimeoutTimers[servoId]);
         cmdTimeoutTimers[servoId] = setTimeout(() => {
