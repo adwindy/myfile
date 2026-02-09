@@ -348,7 +348,7 @@ let currentOperatingJoint = null;
 let commandQueue = [];
 let isProcessingQueue = false;
 // 新增：指令队列长度阈值，超过此值不再接收新指令
-const QUEUE_LENGTH_THRESHOLD = 10;
+const QUEUE_LENGTH_THRESHOLD = 5;
 // 新增：指令超时时间（ms）
 const CMD_TIMEOUT = 2000; // 指令超时时间（ms）
 let cmdTimeoutTimers = {}; // 记录每个舵机的超时计时器
@@ -956,6 +956,7 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
+
 
 
 
