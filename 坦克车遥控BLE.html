@@ -3,20 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32坦克遥控</title>
+    <title>ESP32坦克可视化遥控</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
             font-family: Arial, sans-serif;
+            touch-action: none; /* 禁用默认触摸行为 */
         }
         
         body {
-            max-width: 800px;
+            max-width: 900px;
             margin: 20px auto;
             padding: 20px;
             background-color: #f0f0f0;
+            overflow-x: hidden;
         }
         
         .container {
@@ -50,189 +52,503 @@
             color: #28a745;
         }
         
-        button {
-            padding: 12px 24px;
-            font-size: 16px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            margin: 5px;
-            transition: background-color 0.3s;
-        }
-        
         #connectBtn {
-            background-color: #007bff;
-            color: white;
             display: block;
             margin: 0 auto 20px;
             padding: 15px 30px;
             font-size: 18px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
         }
         
         #connectBtn:hover {
             background-color: #0056b3;
         }
         
-        .control-panel {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 20px;
-            margin: 30px 0;
-        }
-        
-        .track-control {
-            width: 300px;
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-radius: 10px;
-        }
-        
-        .track-control h2 {
-            text-align: center;
-            margin-bottom: 15px;
-            color: #444;
-        }
-        
-        .slider-container {
-            margin: 20px 0;
-        }
-        
-        input[type="range"] {
+        /* 核心控制区域 */
+        .control-area {
+            position: relative;
             width: 100%;
-            height: 8px;
-            border-radius: 4px;
+            height: 500px;
+            margin: 30px auto;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            background-color: #f8f9fa;
+            overflow: hidden;
+        }
+        
+        /* 履带样式 */
+        .track {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 80px;
+            height: 350px;
+            background: linear-gradient(
+                to bottom,
+                rgba(100, 100, 100, 0.1) 0%,
+                rgba(100, 100, 100, 0.2) 50%,
+                rgba(100, 100, 100, 0.1) 100%
+            );
+            border-radius: 10px;
+            cursor: grab;
+            transition: all 0.1s ease;
+        }
+        
+        .track:active {
+            cursor: grabbing;
+        }
+        
+        .track-left {
+            left: 100px;
+        }
+        
+        .track-right {
+            right: 100px;
+        }
+        
+        /* 履带刻度和指示 */
+        .track::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: repeating-linear-gradient(
+                to bottom,
+                transparent 0px,
+                transparent 20px,
+                rgba(80, 80, 80, 0.3) 20px,
+                rgba(80, 80, 80, 0.3) 25px
+            );
+        }
+        
+        .track-center-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #666;
+            transform: translateY(-50%);
+        }
+        
+        /* 中央控制按钮 */
+        .central-control {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: rgba(150, 150, 150, 0.2);
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #555;
+            border: 3px dashed #999;
+            z-index: 10;
+        }
+        
+        .central-control:active {
+            cursor: grabbing;
+        }
+        
+        /* 旋转模式样式 */
+        .central-control.rotate-mode {
+            background: rgba(0, 123, 255, 0.4);
+            border: 3px solid #007bff;
+            color: #007bff;
+        }
+        
+        /* 速度显示面板 */
+        .speed-panel {
+            display: flex;
+            justify-content: space-around;
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f1f1f1;
+            border-radius: 10px;
         }
         
         .speed-display {
             text-align: center;
-            font-size: 18px;
+            font-size: 20px;
+        }
+        
+        .speed-value {
+            font-size: 28px;
             font-weight: bold;
+            color: #007bff;
             margin: 10px 0;
-            color: #333;
         }
         
-        .direction-controls {
-            text-align: center;
-            margin: 20px 0;
-        }
-        
-        .direction-btn {
-            width: 80px;
-            height: 80px;
-            font-size: 24px;
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .direction-btn:hover {
-            background-color: #218838;
-        }
-        
-        .stop-btn {
+        /* 停止按钮 */
+        #stopBtn {
+            display: block;
+            margin: 0 auto;
+            padding: 15px 40px;
+            font-size: 20px;
             background-color: #dc3545;
             color: white;
-            font-size: 20px;
-            padding: 15px 40px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
         }
         
-        .stop-btn:hover {
+        #stopBtn:hover {
             background-color: #c82333;
         }
         
-        .control-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            max-width: 300px;
-            margin: 0 auto;
+        /* 模式提示 */
+        .mode-hint {
+            text-align: center;
+            margin: 15px 0;
+            font-size: 16px;
+            color: #666;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>ESP32坦克遥控</h1>
+        <h1>ESP32坦克可视化遥控</h1>
         
         <button id="connectBtn">连接BLE设备</button>
         <div id="bleStatus" class="ble-status disconnected">未连接BLE设备</div>
         
-        <!-- 方向控制区 -->
-        <div class="direction-controls">
-            <h2>坦克方向控制</h2>
-            <div class="control-grid">
-                <button class="direction-btn" id="forwardBtn">↑</button>
-                <button class="direction-btn" id="leftBtn">←</button>
-                <button class="direction-btn" id="rightBtn">→</button>
-                <button class="direction-btn" id="backwardBtn">↓</button>
-            </div>
-            <br>
-            <button class="stop-btn" id="stopBtn">停止</button>
+        <div class="mode-hint">
+            🔹 拖动履带：单独控制左右履带速度<br>
+            🔹 拖动中央按钮：同时控制双履带（XY轴控制转向和速度）<br>
+            🔹 长按中央按钮1秒：切换原地旋转模式（仅左右拖动有效）
         </div>
         
-        <!-- 独立履带控制区 -->
-        <div class="control-panel">
-            <div class="track-control">
-                <h2>左履带控制</h2>
-                <div class="slider-container">
-                    <input type="range" id="leftTrackSlider" min="-100" max="100" value="0" step="1">
-                    <div class="speed-display" id="leftSpeed">速度: 0</div>
-                </div>
-                <button onclick="setLeftSpeed(100)">前进</button>
-                <button onclick="setLeftSpeed(-100)">后退</button>
-                <button onclick="setLeftSpeed(0)">停止</button>
+        <!-- 核心可视化控制区域 -->
+        <div class="control-area" id="controlArea">
+            <!-- 左履带 -->
+            <div class="track track-left" id="leftTrack">
+                <div class="track-center-line"></div>
             </div>
             
-            <div class="track-control">
-                <h2>右履带控制</h2>
-                <div class="slider-container">
-                    <input type="range" id="rightTrackSlider" min="-100" max="100" value="0" step="1">
-                    <div class="speed-display" id="rightSpeed">速度: 0</div>
-                </div>
-                <button onclick="setRightSpeed(100)">前进</button>
-                <button onclick="setRightSpeed(-100)">后退</button>
-                <button onclick="setRightSpeed(0)">停止</button>
+            <!-- 右履带 -->
+            <div class="track track-right" id="rightTrack">
+                <div class="track-center-line"></div>
+            </div>
+            
+            <!-- 中央控制按钮 -->
+            <div class="central-control" id="centralBtn">
+                控制
             </div>
         </div>
+        
+        <!-- 速度显示面板 -->
+        <div class="speed-panel">
+            <div class="speed-display">
+                <div>左履带速度</div>
+                <div class="speed-value" id="leftSpeed">0</div>
+            </div>
+            <div class="speed-display">
+                <div>右履带速度</div>
+                <div class="speed-value" id="rightSpeed">0</div>
+            </div>
+        </div>
+        
+        <button id="stopBtn">紧急停止</button>
     </div>
 
     <script>
         // BLE相关变量
         let bluetoothDevice = null;
         let characteristic = null;
-        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"; // ESP32的BLE服务UUID
-        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"; // 特征值UUID
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        
+        // 控制状态变量
+        let leftSpeed = 0;    // 左履带速度 (-100 ~ 100)
+        let rightSpeed = 0;   // 右履带速度 (-100 ~ 100)
+        let rotateMode = false; // 是否为原地旋转模式
+        let longPressTimer = null; // 长按计时器
+        let isDragging = false;   // 是否正在拖动
         
         // DOM元素
         const connectBtn = document.getElementById('connectBtn');
         const bleStatus = document.getElementById('bleStatus');
-        const leftTrackSlider = document.getElementById('leftTrackSlider');
-        const rightTrackSlider = document.getElementById('rightTrackSlider');
+        const controlArea = document.getElementById('controlArea');
+        const leftTrack = document.getElementById('leftTrack');
+        const rightTrack = document.getElementById('rightTrack');
+        const centralBtn = document.getElementById('centralBtn');
         const leftSpeedDisplay = document.getElementById('leftSpeed');
         const rightSpeedDisplay = document.getElementById('rightSpeed');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        // 控制区域和元素尺寸
+        const controlAreaRect = controlArea.getBoundingClientRect();
+        const centralBtnCenterX = controlAreaRect.width / 2;
+        const centralBtnCenterY = controlAreaRect.height / 2;
+        const maxDragDistance = 150; // 最大拖动距离（对应速度100）
         
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
-            // 绑定BLE连接按钮
+            // BLE连接/断开
             connectBtn.addEventListener('click', connectBLE);
             
-            // 绑定滑块事件
-            leftTrackSlider.addEventListener('input', updateLeftSpeed);
-            rightTrackSlider.addEventListener('input', updateRightSpeed);
+            // 紧急停止
+            stopBtn.addEventListener('click', stopAll);
             
-            // 绑定方向控制按钮
-            document.getElementById('forwardBtn').addEventListener('click', () => setBothSpeed(100, 100));
-            document.getElementById('backwardBtn').addEventListener('click', () => setBothSpeed(-100, -100));
-            document.getElementById('leftBtn').addEventListener('click', () => setBothSpeed(-50, 50));
-            document.getElementById('rightBtn').addEventListener('click', () => setBothSpeed(50, -50));
-            document.getElementById('stopBtn').addEventListener('click', () => setBothSpeed(0, 0));
+            // 初始化履带拖动事件
+            initTrackDrag(leftTrack, true);
+            initTrackDrag(rightTrack, false);
+            
+            // 初始化中央按钮事件
+            initCentralBtnDrag();
+            
+            // 监听窗口大小变化，更新控制区域尺寸
+            window.addEventListener('resize', updateControlAreaSize);
         });
         
-        // 连接BLE设备
+        // 更新控制区域尺寸
+        function updateControlAreaSize() {
+            const rect = controlArea.getBoundingClientRect();
+            centralBtnCenterX = rect.width / 2;
+            centralBtnCenterY = rect.height / 2;
+        }
+        
+        // 初始化履带拖动
+        function initTrackDrag(trackElement, isLeft) {
+            let startY = 0;
+            let startTrackY = 0;
+            
+            // 鼠标/触摸开始
+            trackElement.addEventListener('mousedown', startDrag);
+            trackElement.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startDrag(e.touches[0]);
+            });
+            
+            // 鼠标/触摸移动
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                drag(e.touches[0]);
+            });
+            
+            // 鼠标/触摸结束
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('touchend', endDrag);
+            
+            function startDrag(e) {
+                isDragging = true;
+                startY = e.clientY;
+                startTrackY = parseFloat(getComputedStyle(trackElement).top) || controlAreaRect.height / 2 - 175;
+                
+                // 添加拖动视觉效果
+                trackElement.style.background = 'rgba(100, 100, 100, 0.3)';
+            }
+            
+            function drag(e) {
+                if (!isDragging) return;
+                
+                // 计算拖动距离
+                const deltaY = e.clientY - startY;
+                const newY = startTrackY + deltaY;
+                
+                // 限制拖动范围
+                const minY = controlAreaRect.height / 2 - 250;
+                const maxY = controlAreaRect.height / 2 - 100;
+                const clampedY = Math.max(minY, Math.min(maxY, newY));
+                
+                // 更新履带位置
+                trackElement.style.top = `${clampedY}px`;
+                
+                // 计算速度（距离中心越远，速度越大）
+                const centerY = controlAreaRect.height / 2 - 175;
+                const distanceFromCenter = (centerY - clampedY) / (maxY - centerY);
+                const speed = Math.round(distanceFromCenter * 100);
+                
+                // 更新速度值
+                if (isLeft) {
+                    leftSpeed = speed;
+                    leftSpeedDisplay.textContent = leftSpeed;
+                } else {
+                    rightSpeed = speed;
+                    rightSpeedDisplay.textContent = rightSpeed;
+                }
+                
+                // 发送控制指令
+                sendData(leftSpeed, rightSpeed);
+            }
+            
+            function endDrag() {
+                if (isDragging) {
+                    isDragging = false;
+                    
+                    // 恢复履带视觉效果
+                    trackElement.style.background = 'linear-gradient(to bottom, rgba(100, 100, 100, 0.1) 0%, rgba(100, 100, 100, 0.2) 50%, rgba(100, 100, 100, 0.1) 100%)';
+                    
+                    // 重置履带位置（回弹到中心）
+                    trackElement.style.transition = 'top 0.3s ease';
+                    trackElement.style.top = `${controlAreaRect.height / 2 - 175}px`;
+                    
+                    // 重置过渡效果
+                    setTimeout(() => {
+                        trackElement.style.transition = 'all 0.1s ease';
+                    }, 300);
+                }
+            }
+        }
+        
+        // 初始化中央按钮拖动
+        function initCentralBtnDrag() {
+            let startX = 0;
+            let startY = 0;
+            let btnStartX = centralBtnCenterX - 75;
+            let btnStartY = centralBtnCenterY - 75;
+            
+            // 鼠标/触摸开始
+            centralBtn.addEventListener('mousedown', startCentralDrag);
+            centralBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startCentralDrag(e.touches[0]);
+                
+                // 长按检测（1秒后切换旋转模式）
+                longPressTimer = setTimeout(() => {
+                    rotateMode = true;
+                    centralBtn.classList.add('rotate-mode');
+                    centralBtn.textContent = '旋转';
+                }, 1000);
+            });
+            
+            // 鼠标/触摸移动
+            document.addEventListener('mousemove', dragCentral);
+            document.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                dragCentral(e.touches[0]);
+            });
+            
+            // 鼠标/触摸结束
+            document.addEventListener('mouseup', endCentralDrag);
+            document.addEventListener('touchend', endCentralDrag);
+            
+            function startCentralDrag(e) {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                btnStartX = parseFloat(getComputedStyle(centralBtn).left) || centralBtnCenterX - 75;
+                btnStartY = parseFloat(getComputedStyle(centralBtn).top) || centralBtnCenterY - 75;
+                
+                // 清除之前的长按计时器（如果有）
+                if (longPressTimer) clearTimeout(longPressTimer);
+            }
+            
+            function dragCentral(e) {
+                if (!isDragging) return;
+                
+                // 计算拖动偏移
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                
+                let newX = btnStartX + deltaX;
+                let newY = btnStartY + deltaY;
+                
+                // 限制拖动范围
+                newX = Math.max(centralBtnCenterX - 75 - maxDragDistance, 
+                               Math.min(centralBtnCenterX - 75 + maxDragDistance, newX));
+                newY = Math.max(centralBtnCenterY - 75 - maxDragDistance, 
+                               Math.min(centralBtnCenterY - 75 + maxDragDistance, newY));
+                
+                // 更新按钮位置
+                centralBtn.style.left = `${newX}px`;
+                centralBtn.style.top = `${newY}px`;
+                
+                // 计算相对于中心的偏移量（归一化到-1 ~ 1）
+                const offsetX = (newX - (centralBtnCenterX - 75)) / maxDragDistance;
+                const offsetY = (newY - (centralBtnCenterY - 75)) / maxDragDistance * -1; // Y轴反向（上为正）
+                
+                // 根据模式计算速度
+                if (rotateMode) {
+                    // 旋转模式：仅X轴有效，左负右正
+                    const rotateSpeed = Math.round(offsetX * 100);
+                    leftSpeed = -rotateSpeed;   // 左转：左退右进；右转：左进右退
+                    rightSpeed = rotateSpeed;
+                } else {
+                    // 常规模式：Y轴控制前进/后退，X轴控制转向
+                    const baseSpeed = Math.round(offsetY * 100);
+                    const steerFactor = offsetX * 50; // 转向系数
+                    
+                    leftSpeed = Math.round(baseSpeed - steerFactor);
+                    rightSpeed = Math.round(baseSpeed + steerFactor);
+                    
+                    // 限制速度范围
+                    leftSpeed = Math.max(-100, Math.min(100, leftSpeed));
+                    rightSpeed = Math.max(-100, Math.min(100, rightSpeed));
+                }
+                
+                // 更新显示
+                leftSpeedDisplay.textContent = leftSpeed;
+                rightSpeedDisplay.textContent = rightSpeed;
+                
+                // 发送控制指令
+                sendData(leftSpeed, rightSpeed);
+            }
+            
+            function endCentralDrag() {
+                if (isDragging) {
+                    isDragging = false;
+                    
+                    // 清除长按计时器
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                    
+                    // 回弹到中心位置
+                    centralBtn.style.transition = 'all 0.3s ease';
+                    centralBtn.style.left = `${centralBtnCenterX - 75}px`;
+                    centralBtn.style.top = `${centralBtnCenterY - 75}px`;
+                    
+                    // 如果是旋转模式，退出并恢复样式
+                    if (rotateMode) {
+                        setTimeout(() => {
+                            rotateMode = false;
+                            centralBtn.classList.remove('rotate-mode');
+                            centralBtn.textContent = '控制';
+                            stopAll(); // 旋转模式结束后停止
+                        }, 300);
+                    } else {
+                        // 常规模式释放后停止
+                        setTimeout(stopAll, 300);
+                    }
+                    
+                    // 重置过渡效果
+                    setTimeout(() => {
+                        centralBtn.style.transition = 'all 0.2s ease';
+                    }, 300);
+                }
+            }
+        }
+        
+        // BLE连接
         async function connectBLE() {
             try {
+                if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                    // 断开连接
+                    bluetoothDevice.gatt.disconnect();
+                    onDisconnected();
+                    return;
+                }
+                
                 // 请求蓝牙设备
                 bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'ESP32' }], // 根据你的ESP32设备名称调整
+                    filters: [{ namePrefix: 'ESP32' }],
                     optionalServices: [SERVICE_UUID]
                 });
                 
@@ -245,10 +561,8 @@
                 bleStatus.textContent = `已连接: ${bluetoothDevice.name}`;
                 bleStatus.className = 'ble-status connected';
                 connectBtn.textContent = '断开连接';
-                connectBtn.removeEventListener('click', connectBLE);
-                connectBtn.addEventListener('click', disconnectBLE);
                 
-                // 监听设备断开
+                // 监听断开
                 bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
                 
             } catch (error) {
@@ -258,14 +572,6 @@
             }
         }
         
-        // 断开BLE连接
-        function disconnectBLE() {
-            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-                bluetoothDevice.gatt.disconnect();
-            }
-            onDisconnected();
-        }
-        
         // 处理断开连接
         function onDisconnected() {
             bluetoothDevice = null;
@@ -273,19 +579,17 @@
             bleStatus.textContent = '未连接BLE设备';
             bleStatus.className = 'ble-status disconnected';
             connectBtn.textContent = '连接BLE设备';
-            connectBtn.removeEventListener('click', disconnectBLE);
-            connectBtn.addEventListener('click', connectBLE);
         }
         
         // 发送数据到ESP32
         async function sendData(leftSpeed, rightSpeed) {
             if (!characteristic) {
-                alert('请先连接BLE设备！');
+                console.log('未连接BLE设备，跳过发送');
                 return;
             }
             
             try {
-                // 格式化数据: LxxxRxxx (例如 L100R50 表示左履带100，右履带50)
+                // 格式化数据: LxxxRxxx
                 const left = leftSpeed.toString().padStart(3, leftSpeed >= 0 ? '0' : '-');
                 const right = rightSpeed.toString().padStart(3, rightSpeed >= 0 ? '0' : '-');
                 const data = `L${left}R${right}`;
@@ -297,45 +601,18 @@
                 console.log(`发送数据: ${data}`);
             } catch (error) {
                 console.error('发送数据失败:', error);
-                alert('发送数据失败，请重新连接！');
+                bleStatus.textContent = '发送数据失败，请重新连接';
+                bleStatus.className = 'ble-status disconnected';
             }
         }
         
-        // 更新左履带速度显示并发送
-        function updateLeftSpeed() {
-            const speed = parseInt(leftTrackSlider.value);
-            leftSpeedDisplay.textContent = `速度: ${speed}`;
-            sendData(speed, parseInt(rightTrackSlider.value));
-        }
-        
-        // 更新右履带速度显示并发送
-        function updateRightSpeed() {
-            const speed = parseInt(rightTrackSlider.value);
-            rightSpeedDisplay.textContent = `速度: ${speed}`;
-            sendData(parseInt(leftTrackSlider.value), speed);
-        }
-        
-        // 设置左履带速度
-        function setLeftSpeed(speed) {
-            leftTrackSlider.value = speed;
-            leftSpeedDisplay.textContent = `速度: ${speed}`;
-            sendData(speed, parseInt(rightTrackSlider.value));
-        }
-        
-        // 设置右履带速度
-        function setRightSpeed(speed) {
-            rightTrackSlider.value = speed;
-            rightSpeedDisplay.textContent = `速度: ${speed}`;
-            sendData(parseInt(leftTrackSlider.value), speed);
-        }
-        
-        // 设置两个履带的速度
-        function setBothSpeed(leftSpeed, rightSpeed) {
-            leftTrackSlider.value = leftSpeed;
-            rightTrackSlider.value = rightSpeed;
-            leftSpeedDisplay.textContent = `速度: ${leftSpeed}`;
-            rightSpeedDisplay.textContent = `速度: ${rightSpeed}`;
-            sendData(leftSpeed, rightSpeed);
+        // 停止所有电机
+        function stopAll() {
+            leftSpeed = 0;
+            rightSpeed = 0;
+            leftSpeedDisplay.textContent = '0';
+            rightSpeedDisplay.textContent = '0';
+            sendData(0, 0);
         }
     </script>
 </body>
