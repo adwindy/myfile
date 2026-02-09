@@ -917,7 +917,7 @@ async function processCommandQueue() {
     
     // 添加小延迟，避免GATT操作冲突
     console.log(`【延迟】等待250ms后继续发送下一条指令`);
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
   
   isProcessingQueue = false;
@@ -984,6 +984,7 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
+
 
 
 
