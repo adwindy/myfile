@@ -1,225 +1,334 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>坦克履带控制</title>
+<title>ESP32 坦克可视化遥控</title>
 
 <style>
-body {
-    margin: 0;
-    background: #111;
-    color: #fff;
-    user-select: none;
-    touch-action: none;
-    font-family: system-ui, sans-serif;
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial,sans-serif;
+    touch-action:none;
 }
 
-#controlArea {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
+body{
+    max-width:900px;
+    margin:20px auto;
+    padding:20px;
+    background:#f0f0f0;
+}
+
+.container{
+    background:#fff;
+    padding:30px;
+    border-radius:15px;
+    box-shadow:0 5px 15px rgba(0,0,0,.1);
+}
+
+h1{
+    text-align:center;
+    margin-bottom:20px;
+}
+
+#connectBtn{
+    display:block;
+    margin:0 auto 15px;
+    padding:12px 30px;
+    font-size:18px;
+    background:#007bff;
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+}
+
+.ble-status{
+    text-align:center;
+    margin-bottom:20px;
+    padding:8px;
+    border-radius:6px;
+    font-weight:bold;
+}
+.connected{background:#e8f5e9;color:#28a745}
+.disconnected{background:#ffeeee;color:#dc3545}
+
+.mode-hint{
+    text-align:center;
+    font-size:14px;
+    color:#666;
+    margin-bottom:15px;
+}
+
+/* 控制区域 */
+.control-area{
+    position:relative;
+    height:500px;
+    background:#f8f9fa;
+    border:2px solid #ddd;
+    border-radius:10px;
+    overflow:hidden;
 }
 
 /* 履带 */
-.track {
-    position: absolute;
-    top: 50%;
-    width: 60px;
-    height: 70%;
-    background: linear-gradient(to top, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
-    border-radius: 30px;
-    transform: translateY(-50%);
-    backdrop-filter: blur(6px);
-    transition: transform 0.1s;
+.track{
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:90px;
+    height:360px;
+    border-radius:12px;
+    background:linear-gradient(
+        to bottom,
+        rgba(120,120,120,.1),
+        rgba(120,120,120,.25),
+        rgba(120,120,120,.1)
+    );
+    backdrop-filter:blur(4px);
 }
 
-#leftTrack { left: 20px; }
-#rightTrack { right: 20px; }
-
-/* 中央控制 */
-#centralBtn {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 140px;
-    height: 140px;
-    margin-left: -70px;
-    margin-top: -70px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.12);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    transition: background 0.2s;
+.track::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 18px,
+        rgba(80,80,80,.35) 18px,
+        rgba(80,80,80,.35) 22px
+    );
+    border-radius:12px;
 }
 
-#centralBtn.rotate {
-    background: rgba(255,120,120,0.25);
+.track-left{left:120px}
+.track-right{right:120px}
+
+/* 中央按钮 */
+.central-control{
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:150px;
+    height:150px;
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:rgba(150,150,150,.25);
+    border:3px dashed #999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:22px;
+    color:#555;
+    cursor:grab;
+    transition:.2s;
+}
+
+.central-control.rotate{
+    background:rgba(0,123,255,.35);
+    border-color:#007bff;
+    color:#007bff;
+}
+
+/* 速度显示 */
+.speed-panel{
+    display:flex;
+    justify-content:space-around;
+    margin:20px 0;
+    padding:15px;
+    background:#eee;
+    border-radius:10px;
+}
+.speed-value{
+    font-size:26px;
+    color:#007bff;
+    font-weight:bold;
+    margin-top:6px;
+}
+
+#stopBtn{
+    display:block;
+    margin:0 auto;
+    padding:12px 40px;
+    font-size:18px;
+    background:#dc3545;
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
 }
 </style>
 </head>
 
 <body>
-<div id="controlArea">
-    <div id="leftTrack" class="track"></div>
-    <div id="rightTrack" class="track"></div>
-    <div id="centralBtn">停止</div>
+<div class="container">
+<h1>ESP32 坦克可视化遥控</h1>
+
+<button id="connectBtn">连接 BLE</button>
+<div id="bleStatus" class="ble-status disconnected">未连接</div>
+
+<div class="mode-hint">
+拖单条履带：独立控制<br>
+拖中间按钮：前进 / 转向<br>
+长按 1 秒：原地旋转
+</div>
+
+<div class="control-area" id="controlArea">
+    <div class="track track-left" id="leftTrack"></div>
+    <div class="track track-right" id="rightTrack"></div>
+    <div class="central-control" id="centralBtn">控制</div>
+</div>
+
+<div class="speed-panel">
+    <div>左履带<div class="speed-value" id="leftSpeed">0</div></div>
+    <div>右履带<div class="speed-value" id="rightSpeed">0</div></div>
+</div>
+
+<button id="stopBtn">紧急停止</button>
 </div>
 
 <script>
-/* ========= 工具 ========= */
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const getRect = () => controlArea.getBoundingClientRect();
+/* BLE */
+let bluetoothDevice=null,characteristic=null;
+const SERVICE_UUID="4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const CHARACTERISTIC_UUID="beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
-/* ========= 元素 ========= */
-const controlArea = document.getElementById('controlArea');
-const leftTrack = document.getElementById('leftTrack');
-const rightTrack = document.getElementById('rightTrack');
-const centralBtn = document.getElementById('centralBtn');
+/* 状态 */
+let leftSpeed=0,rightSpeed=0;
+let draggingLeft=false,draggingRight=false,draggingCenter=false;
+let rotateMode=false,longPressTimer=null;
 
-/* ========= 状态 ========= */
-let leftDragging = false;
-let rightDragging = false;
-let centerDragging = false;
+const maxDrag=150;
 
-let rotateMode = false;
-let longPressTimer = null;
-let centerMoved = false;
+/* DOM */
+const leftTrack=document.getElementById("leftTrack");
+const rightTrack=document.getElementById("rightTrack");
+const centralBtn=document.getElementById("centralBtn");
+const leftSpeedDom=document.getElementById("leftSpeed");
+const rightSpeedDom=document.getElementById("rightSpeed");
+const stopBtn=document.getElementById("stopBtn");
+const connectBtn=document.getElementById("connectBtn");
+const bleStatus=document.getElementById("bleStatus");
 
-/* ========= 速度 ========= */
-let leftSpeed = 0;
-let rightSpeed = 0;
+/* 工具 */
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 
-/* ========= 发送占位 ========= */
-function sendSpeed(l, r) {
-    console.log(`L:${l}  R:${r}`);
+function updateTrackRotation(){
+    const diff=(rightSpeed-leftSpeed)/200;
+    const angle=diff*14;
+    leftTrack.style.transform=`translateY(-50%) rotate(${-angle}deg)`;
+    rightTrack.style.transform=`translateY(-50%) rotate(${angle}deg)`;
 }
 
-/* ========= 视觉 ========= */
-function updateTrackVisual() {
-    const maxAngle = 12;
-    const diff = (rightSpeed - leftSpeed) / 200 * maxAngle;
-    leftTrack.style.transform = `translateY(-50%) rotate(${-diff}deg)`;
-    rightTrack.style.transform = `translateY(-50%) rotate(${diff}deg)`;
+function stopAll(){
+    leftSpeed=rightSpeed=0;
+    leftSpeedDom.textContent=0;
+    rightSpeedDom.textContent=0;
+    updateTrackRotation();
+    sendData(0,0);
 }
 
-function resetVisual() {
-    leftTrack.style.transform = 'translateY(-50%) rotate(0deg)';
-    rightTrack.style.transform = 'translateY(-50%) rotate(0deg)';
+/* 单履带拖动 */
+function bindTrack(track,isLeft){
+    let startY=0;
+    track.addEventListener("pointerdown",e=>{
+        startY=e.clientY;
+        isLeft?draggingLeft=true:draggingRight=true;
+    });
+    window.addEventListener("pointermove",e=>{
+        if(!(isLeft?draggingLeft:draggingRight))return;
+        const delta=clamp(startY-e.clientY,-maxDrag,maxDrag);
+        const speed=Math.round(delta/maxDrag*100);
+        if(isLeft){leftSpeed=speed;leftSpeedDom.textContent=speed}
+        else{rightSpeed=speed;rightSpeedDom.textContent=speed}
+        updateTrackRotation();
+        sendData(leftSpeed,rightSpeed);
+    });
+    window.addEventListener("pointerup",()=>{
+        draggingLeft=draggingRight=false;
+        stopAll();
+    });
 }
 
-/* ========= 停止 ========= */
-function stopAll() {
-    leftSpeed = 0;
-    rightSpeed = 0;
-    sendSpeed(0, 0);
-    centralBtn.textContent = '停止';
-    centralBtn.classList.remove('rotate');
-    rotateMode = false;
-    resetVisual();
-}
+bindTrack(leftTrack,true);
+bindTrack(rightTrack,false);
 
-/* ========= 履带控制 ========= */
-function dragTrack(e, side) {
-    const rect = getRect();
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
-    const offset = clamp((rect.height / 2 - y) / (rect.height / 2), -1, 1);
-    const speed = Math.round(offset * 100);
+/* 中央按钮 */
+centralBtn.addEventListener("pointerdown",e=>{
+    draggingCenter=true;
+    const sx=e.clientX,sy=e.clientY;
 
-    if (side === 'left') leftSpeed = speed;
-    else rightSpeed = speed;
+    longPressTimer=setTimeout(()=>{
+        rotateMode=true;
+        centralBtn.classList.add("rotate");
+        centralBtn.textContent="旋转";
+    },1000);
 
-    sendSpeed(leftSpeed, rightSpeed);
-    updateTrackVisual();
-}
+    const move=ev=>{
+        if(!draggingCenter)return;
+        clearTimeout(longPressTimer);
 
-/* ========= 中央控制 ========= */
-function startCenter(e) {
-    centerDragging = true;
-    centerMoved = false;
+        let dx=clamp((ev.clientX-sx)/maxDrag,-1,1);
+        let dy=clamp((sy-ev.clientY)/maxDrag,-1,1);
+        if(rotateMode)dy=0;
 
-    longPressTimer = setTimeout(() => {
-        if (!centerMoved) {
-            rotateMode = true;
-            centralBtn.classList.add('rotate');
-            centralBtn.textContent = '旋转';
+        if(rotateMode){
+            leftSpeed=Math.round(-dx*100);
+            rightSpeed=Math.round(dx*100);
+        }else{
+            const base=dy*100,turn=dx*60;
+            leftSpeed=clamp(base-turn,-100,100);
+            rightSpeed=clamp(base+turn,-100,100);
         }
-    }, 1000);
-}
 
-function dragCenter(e) {
-    if (!centerDragging) return;
-    centerMoved = true;
+        leftSpeedDom.textContent=leftSpeed;
+        rightSpeedDom.textContent=rightSpeed;
+        updateTrackRotation();
+        sendData(leftSpeed,rightSpeed);
+    };
 
-    const rect = getRect();
-    const x = e.touches ? e.touches[0].clientX : e.clientX;
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const up=()=>{
+        draggingCenter=false;
+        rotateMode=false;
+        centralBtn.classList.remove("rotate");
+        centralBtn.textContent="控制";
+        stopAll();
+        window.removeEventListener("pointermove",move);
+        window.removeEventListener("pointerup",up);
+    };
 
-    let dx = clamp((x - rect.width / 2) / (rect.width / 2), -1, 1);
-    let dy = clamp((rect.height / 2 - y) / (rect.height / 2), -1, 1);
+    window.addEventListener("pointermove",move);
+    window.addEventListener("pointerup",up);
+});
 
-    if (rotateMode) dy = 0;
-
-    if (rotateMode) {
-        const r = Math.round(dx * 80);
-        leftSpeed = -r;
-        rightSpeed = r;
-    } else {
-        const forward = dy * 100;
-        const turn = dx * 80;
-        leftSpeed = clamp(forward - turn, -100, 100);
-        rightSpeed = clamp(forward + turn, -100, 100);
+/* BLE */
+async function connectBLE(){
+    try{
+        bluetoothDevice=await navigator.bluetooth.requestDevice({
+            filters:[{namePrefix:"ESP32"}],
+            optionalServices:[SERVICE_UUID]
+        });
+        const server=await bluetoothDevice.gatt.connect();
+        const service=await server.getPrimaryService(SERVICE_UUID);
+        characteristic=await service.getCharacteristic(CHARACTERISTIC_UUID);
+        bleStatus.textContent="已连接 "+bluetoothDevice.name;
+        bleStatus.className="ble-status connected";
+    }catch(e){
+        bleStatus.textContent="连接失败";
+        bleStatus.className="ble-status disconnected";
     }
-
-    centralBtn.textContent =
-        leftSpeed === 0 && rightSpeed === 0 ? '停止' : '控制';
-
-    sendSpeed(leftSpeed, rightSpeed);
-    updateTrackVisual();
 }
 
-function endCenter() {
-    centerDragging = false;
-    clearTimeout(longPressTimer);
-    stopAll();
+async function sendData(l,r){
+    if(!characteristic)return;
+    const data=`L${l.toString().padStart(3,"0")}R${r.toString().padStart(3,"0")}`;
+    await characteristic.writeValue(new TextEncoder().encode(data));
 }
 
-/* ========= 绑定 ========= */
-leftTrack.onmousedown = e => leftDragging = true;
-rightTrack.onmousedown = e => rightDragging = true;
-
-document.onmousemove = e => {
-    if (leftDragging) dragTrack(e, 'left');
-    if (rightDragging) dragTrack(e, 'right');
-};
-
-document.onmouseup = () => {
-    leftDragging = false;
-    rightDragging = false;
-};
-
-leftTrack.ontouchstart = e => { leftDragging = true; e.preventDefault(); };
-rightTrack.ontouchstart = e => { rightDragging = true; e.preventDefault(); };
-
-leftTrack.ontouchmove = e => dragTrack(e, 'left');
-rightTrack.ontouchmove = e => dragTrack(e, 'right');
-
-leftTrack.ontouchend = rightTrack.ontouchend = () => {
-    leftDragging = false;
-    rightDragging = false;
-};
-
-centralBtn.onmousedown = startCenter;
-centralBtn.onmousemove = dragCenter;
-centralBtn.onmouseup = endCenter;
-centralBtn.onmouseleave = endCenter;
-
-centralBtn.ontouchstart = e => { startCenter(e); e.preventDefault(); };
-centralBtn.ontouchmove = e => dragCenter(e);
-centralBtn.ontouchend = endCenter;
+connectBtn.onclick=connectBLE;
+stopBtn.onclick=stopAll;
 </script>
 </body>
 </html>
