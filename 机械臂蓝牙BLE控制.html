@@ -251,7 +251,7 @@ main {
 
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
-  <div style="font-weight: bold;">机械臂控制系统1.02</div>
+  <div style="font-weight: bold;">机械臂控制系统1.13</div>
   <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
@@ -350,6 +350,9 @@ const DEFAULT_RELEASE_DELAY = 200;
 const bleBtn = document.getElementById('bleConnectBtn');
 // 新增：操作锁定机制 - 当前正在操作的舵机ID
 let currentOperatingJoint = null;
+// 新增：指令队列，确保蓝牙指令按顺序执行
+let commandQueue = [];
+let isProcessingQueue = false;
 // 新增：堵转保护全局变量
 const STALL_CURRENT_THRESHOLD = 800; // 堵转电流阈值（mA，根据舵机参数调整）
 const CMD_TIMEOUT = 2000; // 指令超时时间（ms）
@@ -829,7 +832,7 @@ async function send(cmd) {
   if (!cmd) {
     console.warn("空指令，跳过发送");
     return;
-  }  
+  }
   
   // 2. 校验蓝牙连接状态
   if (!bleChar || !bleDevice || !bleDevice.gatt.connected) {
@@ -839,71 +842,96 @@ async function send(cmd) {
     return;
   }
 
-  try {
-    const data = new TextEncoder().encode(cmd);
-    // 3. 优先使用无响应写入（BLE设备更兼容）
-    if (bleChar.writeValueWithoutResponse) {
-      await bleChar.writeValueWithoutResponse(data);
-    } else if (bleChar.writeValue) {
-      await bleChar.writeValue(data);
-    } else {
-      throw new Error("浏览器不支持BLE写入操作");
-    }
+  // 3. 将指令加入队列，避免并发操作
+  commandQueue.push(cmd);
+  processCommandQueue();
+}
 
-    // 当发送停止指令时，清除所有超时计时器
-    if (cmd === "$DST!") {
-      Object.keys(cmdTimeoutTimers).forEach(id => {
-        clearTimeout(cmdTimeoutTimers[id]);
-        delete cmdTimeoutTimers[id];
-      });
-    }
-
-    // === 新增：指令超时保护 ===
-    const servoMatch = cmd.match(/#(\d+)P/);
-    if (servoMatch) {
-      const servoId = servoMatch[1];
-      if (cmdTimeoutTimers[servoId]) clearTimeout(cmdTimeoutTimers[servoId]);
-      cmdTimeoutTimers[servoId] = setTimeout(() => {
-        status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
-        status.style.color = "red";
-        send("$DST!");
-        // 回弹所有滑块
-        document.querySelectorAll('input[type="range"]').forEach(slider => {
-          slider.value = 3;
-        });
-      }, CMD_TIMEOUT);
-    }
-	
-    // 更新状态提示
-    status.innerText = `发送成功: ${cmd.substring(0, 10)}...`;
-    status.style.color = "green";
-    // 2秒后恢复状态
-    setTimeout(() => {
-      if (bleDevice && bleDevice.gatt.connected) {
-        status.innerText = "已连接: " + bleDevice.name;
-      }
-    }, 2000);
-    console.log("【成功】发送指令：", cmd);
-  } catch (e) {
-    status.innerText = `发送失败: ${e.message}`;
-    status.style.color = "red";
-    console.error("指令发送失败:", e);
+// 新增：处理指令队列，确保指令按顺序执行
+async function processCommandQueue() {
+  const status = document.getElementById('statusInfo');
+  const bleChar = window.bleChar;
+  const bleDevice = window.bleDevice;
+  
+  // 如果队列正在处理或队列为空，直接返回
+  if (isProcessingQueue || commandQueue.length === 0) return;
+  
+  isProcessingQueue = true;
+  
+  while (commandQueue.length > 0) {
+    const cmd = commandQueue.shift();
     
-    // 自动重连逻辑
-    if (e.message.includes("GATT operation not permitted") && bleDevice) {
-      try {
-        await bleDevice.gatt.connect();
-        status.innerText = "已重连蓝牙，可重试发送";
-        console.log("【成功】自动重连蓝牙");
-      } catch (reconnectErr) {
-        status.innerText = "重连失败，请重新连接蓝牙";
-        window.bleChar = null;
-        bleBtn.classList.remove('connected');
-        bleBtn.innerText = "🔵 连接蓝牙";
-        console.error("重连失败:", reconnectErr);
+    try {
+      const data = new TextEncoder().encode(cmd);
+      // 优先使用无响应写入（BLE设备更兼容）
+      if (bleChar.writeValueWithoutResponse) {
+        await bleChar.writeValueWithoutResponse(data);
+      } else if (bleChar.writeValue) {
+        await bleChar.writeValue(data);
+      } else {
+        throw new Error("浏览器不支持BLE写入操作");
+      }
+
+      // 当发送停止指令时，清除所有超时计时器
+      if (cmd === "$DST!") {
+        Object.keys(cmdTimeoutTimers).forEach(id => {
+          clearTimeout(cmdTimeoutTimers[id]);
+          delete cmdTimeoutTimers[id];
+        });
+      }
+
+      // === 新增：指令超时保护 ===
+      const servoMatch = cmd.match(/#(\d+)P/);
+      if (servoMatch) {
+        const servoId = servoMatch[1];
+        if (cmdTimeoutTimers[servoId]) clearTimeout(cmdTimeoutTimers[servoId]);
+        cmdTimeoutTimers[servoId] = setTimeout(() => {
+          status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
+          status.style.color = "red";
+          send("$DST!");
+          // 回弹所有滑块
+          document.querySelectorAll('input[type="range"]').forEach(slider => {
+            slider.value = 3;
+          });
+        }, CMD_TIMEOUT);
+      }
+
+      // 更新状态提示
+      status.innerText = `发送成功: ${cmd.substring(0, 10)}...`;
+      status.style.color = "green";
+      // 2秒后恢复状态
+      setTimeout(() => {
+        if (bleDevice && bleDevice.gatt.connected) {
+          status.innerText = "已连接: " + bleDevice.name;
+        }
+      }, 2000);
+      console.log("【成功】发送指令：", cmd);
+    } catch (e) {
+      status.innerText = `发送失败: ${e.message}`;
+      status.style.color = "red";
+      console.error("指令发送失败:", e);
+      
+      // 自动重连逻辑
+      if (e.message.includes("GATT operation not permitted") && bleDevice) {
+        try {
+          await bleDevice.gatt.connect();
+          status.innerText = "已重连蓝牙，可重试发送";
+          console.log("【成功】自动重连蓝牙");
+        } catch (reconnectErr) {
+          status.innerText = "重连失败，请重新连接蓝牙";
+          window.bleChar = null;
+          bleBtn.classList.remove('connected');
+          bleBtn.innerText = "🔵 连接蓝牙";
+          console.error("重连失败:", reconnectErr);
+        }
       }
     }
+    
+    // 添加小延迟，避免GATT操作冲突
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
+  
+  isProcessingQueue = false;
 }
 
 function positionSliders() {
