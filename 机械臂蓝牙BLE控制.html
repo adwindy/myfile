@@ -251,7 +251,7 @@ main {
 
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
-  <div style="font-weight: bold;">机械臂控制系统1.01</div>
+  <div style="font-weight: bold;">机械臂控制系统1.02</div>
   <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
@@ -384,7 +384,27 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.addEventListener('mouseleave', function() {
       this.classList.remove('tap-active');
     });
+    // 阻止按钮的上下文菜单弹出
+    btn.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+    });
   });
+  
+  // 阻止滑块的上下文菜单弹出
+  const sliders = document.querySelectorAll('input[type="range"]');
+  sliders.forEach(slider => {
+    slider.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+    });
+  });
+  
+  // 阻止主容器的上下文菜单弹出，防止长按背景图片时弹出保存菜单
+  const mainContainer = document.querySelector('main');
+  if (mainContainer) {
+    mainContainer.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+    });
+  }
 });
 
 function handleImageError(img) {
