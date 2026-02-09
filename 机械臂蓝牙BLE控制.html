@@ -348,6 +348,8 @@ let releaseTimers = {};
 // 新增：默认抬起延迟时间(ms)
 const DEFAULT_RELEASE_DELAY = 200;
 const bleBtn = document.getElementById('bleConnectBtn');
+// 新增：操作锁定机制 - 当前正在操作的舵机ID
+let currentOperatingJoint = null;
 // 新增：堵转保护全局变量
 const STALL_CURRENT_THRESHOLD = 800; // 堵转电流阈值（mA，根据舵机参数调整）
 const CMD_TIMEOUT = 2000; // 指令超时时间（ms）
@@ -468,12 +470,22 @@ function handleBtnRelease(e) {
 }
 
 function sliderDown(sliderId, sliderEl) {
+  // 操作锁定检查：如果有其他舵机正在操作，不允许开始新操作
+  if (currentOperatingJoint !== null && currentOperatingJoint !== sliderId) {
+    console.log(`操作锁定：当前正在操作舵机${currentOperatingJoint}，请完成后再操作其他舵机`);
+    return;
+  }
+  
+  // 开始操作当前舵机，设置锁定
+  currentOperatingJoint = sliderId;
   sliderHeld[sliderId] = true;
+  
   // 清除该滑块的现有延迟计时器
   if (releaseTimers[`slider_${sliderId}`]) {
     clearTimeout(releaseTimers[`slider_${sliderId}`]);
     delete releaseTimers[`slider_${sliderId}`];
   }
+  
   judgeSliderLevel(sliderId, sliderEl);
 }
 
@@ -494,6 +506,20 @@ function sliderUp(sliderId, sliderEl) {
   sendSliderReleaseCmd(sliderId);
   // 清空当前激活的按钮记录
   delete sliderActiveBtn[sliderId];
+  
+  // 等待抬起指令执行完成后释放操作锁定
+  // 获取延迟时间，确保抬起指令有足够时间执行
+  const activeBtnId = sliderActiveBtn[sliderId];
+  const cfg = activeBtnId ? buttonConfigs[activeBtnId] : null;
+  const releaseDelay = cfg?.releaseDelay || DEFAULT_RELEASE_DELAY;
+  
+  // 延迟释放锁定，确保MCU有足够时间处理停止指令
+  setTimeout(() => {
+    if (currentOperatingJoint === sliderId) {
+      currentOperatingJoint = null;
+      console.log(`操作锁定已释放，现在可以操作其他舵机`);
+    }
+  }, releaseDelay + 100); // 额外加100ms保险时间
 }
 
 function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
@@ -511,6 +537,21 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
     sendSliderReleaseCmd(sliderId);
     // 清空当前激活的按钮记录
     delete sliderActiveBtn[sliderId];
+    
+    // 滑块回到中间位置时，释放操作锁定
+    // 获取延迟时间，确保抬起指令有足够时间执行
+    const activeBtnId = sliderActiveBtn[sliderId];
+    const cfg = activeBtnId ? buttonConfigs[activeBtnId] : null;
+    const releaseDelay = cfg?.releaseDelay || DEFAULT_RELEASE_DELAY;
+    
+    // 延迟释放锁定，确保MCU有足够时间处理停止指令
+    setTimeout(() => {
+      if (currentOperatingJoint === sliderId) {
+        currentOperatingJoint = null;
+        console.log(`操作锁定已释放，现在可以操作其他舵机`);
+      }
+    }, releaseDelay + 100); // 额外加100ms保险时间
+    
     return;
   }
 
@@ -667,7 +708,7 @@ async function connectBLE() {
         }
 
         // 6. 启用通知（电脑端需确保通知开启成功）
-        //await characteristic.startNotifications();
+        //await characteristic.startNotifications();//注释这句后，浏览器连接蓝牙就不会出问题了
         characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
 
         // 连接成功，更新状态
@@ -768,7 +809,7 @@ async function send(cmd) {
   if (!cmd) {
     console.warn("空指令，跳过发送");
     return;
-  }
+  }  
   
   // 2. 校验蓝牙连接状态
   if (!bleChar || !bleDevice || !bleDevice.gatt.connected) {
@@ -789,6 +830,13 @@ async function send(cmd) {
       throw new Error("浏览器不支持BLE写入操作");
     }
 
+    // 当发送停止指令时，清除所有超时计时器
+    if (cmd === "$DST!") {
+      Object.keys(cmdTimeoutTimers).forEach(id => {
+        clearTimeout(cmdTimeoutTimers[id]);
+        delete cmdTimeoutTimers[id];
+      });
+    }
 
     // === 新增：指令超时保护 ===
     const servoMatch = cmd.match(/#(\d+)P/);
