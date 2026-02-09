@@ -916,7 +916,7 @@ async function processCommandQueue() {
     }
     
     // 添加小延迟，避免GATT操作冲突
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
   
   isProcessingQueue = false;
