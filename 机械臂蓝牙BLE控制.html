@@ -833,12 +833,29 @@ async function processCommandQueue() {
         throw new Error("浏览器不支持BLE写入操作");
       }
 
-      // 当发送停止指令时，清除所有超时计时器
-      if (cmd === "$DST!") {
+
+      //所有滑块按钮的抬起指令合集
+      const liftCommands = new Set();
+      ["L1", "R1", "L2", "R2", "L3", "R3", "L4", "R4", "L5", "R5", "L6", "R6"].forEach(btnId => {
+        const cfg = buttonConfigs[btnId];
+        if (cfg && cfg.release) {
+          liftCommands.add(cfg.release);
+        }
+      });
+      // 添加$DST!指令
+      liftCommands.add("$DST!");
+      // 生成合集指令字符串
+      const combinedCmd = `{${Array.from(liftCommands).join('')}}`;
+
+      // 当发送停止指令或抬起指令合集时，清除所有超时计时器
+      if (cmd === "$DST!" || cmd === combinedCmd) {
         Object.keys(cmdTimeoutTimers).forEach(id => {
           clearTimeout(cmdTimeoutTimers[id]);
           delete cmdTimeoutTimers[id];
         });
+        if (cmd === combinedCmd) {
+          console.log(`【合集指令】清除所有超时计时器`);
+        }
       }
 
       // === 新增：指令超时保护 ===
@@ -851,16 +868,7 @@ async function processCommandQueue() {
           status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
           console.log(`舵机${servoId}指令超时，强制停止`);
           status.style.color = "red";
-          // 发送所有滑块按钮的抬起指令合集
-          const liftCommands = new Set();
-          ["L1", "R1", "L2", "R2", "L3", "R3", "L4", "R4", "L5", "R5", "L6", "R6"].forEach(btnId => {
-            const cfg = buttonConfigs[btnId];
-            if (cfg && cfg.release) {
-              liftCommands.add(cfg.release);
-            }
-          });
-          // 添加$DST!指令
-          liftCommands.add("$DST!");
+          // 发送
           
           if (liftCommands.size > 0) {
             const combinedCmd = `{${Array.from(liftCommands).join('')}}`;
