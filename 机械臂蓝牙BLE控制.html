@@ -251,7 +251,7 @@ main {
 
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
-  <div style="font-weight: bold;">机械臂控制系统1.16</div>
+  <div style="font-weight: bold;">机械臂控制系统1.17</div>
   <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
@@ -453,11 +453,6 @@ function initButtons() {
 function handleBtnPress(e) {
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
-  // 清除该按钮的现有延迟计时器（如果有）
-  if (releaseTimers[btnId]) {
-    clearTimeout(releaseTimers[btnId]);
-    delete releaseTimers[btnId];
-  }
   const cfg = buttonConfigs[btnId];
   if (cfg && cfg.press) send(cfg.press);
 }
