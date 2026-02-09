@@ -251,7 +251,7 @@ main {
 
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
-  <div style="font-weight: bold;">机械臂控制系统1.13</div>
+  <div style="font-weight: bold;">机械臂控制系统1.14</div>
   <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
@@ -353,8 +353,7 @@ let currentOperatingJoint = null;
 // 新增：指令队列，确保蓝牙指令按顺序执行
 let commandQueue = [];
 let isProcessingQueue = false;
-// 新增：堵转保护全局变量
-const STALL_CURRENT_THRESHOLD = 800; // 堵转电流阈值（mA，根据舵机参数调整）
+// 新增：指令超时时间（ms）
 const CMD_TIMEOUT = 2000; // 指令超时时间（ms）
 let cmdTimeoutTimers = {}; // 记录每个舵机的超时计时器
 
@@ -928,7 +927,7 @@ async function processCommandQueue() {
     }
     
     // 添加小延迟，避免GATT操作冲突
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 150));
   }
   
   isProcessingQueue = false;
