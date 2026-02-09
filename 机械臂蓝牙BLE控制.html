@@ -850,7 +850,24 @@ async function processCommandQueue() {
           status.innerText = `⚠️ 舵机${servoId}指令超时，强制停止`;
           console.log(`舵机${servoId}指令超时，强制停止`);
           status.style.color = "red";
-          send("$DST!111");
+          // 发送所有滑块按钮的抬起指令合集
+          const liftCommands = new Set();
+          ["L1", "R1", "L2", "R2", "L3", "R3", "L4", "R4", "L5", "R5", "L6", "R6"].forEach(btnId => {
+            const cfg = buttonConfigs[btnId];
+            if (cfg && cfg.release) {
+              liftCommands.add(cfg.release);
+            }
+          });
+          // 添加$DST!指令
+          liftCommands.add("$DST!");
+          
+          if (liftCommands.size > 0) {
+            const combinedCmd = `{${Array.from(liftCommands).join('')}}`;
+            send(combinedCmd);
+            console.log(`【超时保护】发送抬起指令合集: ${combinedCmd}`);
+          } else {
+            send("$DST!");
+          }
           // 回弹所有滑块
           document.querySelectorAll('input[type="range"]').forEach(slider => {
             slider.value = 3;
@@ -957,9 +974,6 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
-
-
-
 
 
 
