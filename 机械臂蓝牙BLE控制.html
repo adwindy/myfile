@@ -251,7 +251,7 @@ main {
 
 <header>
   <button onclick="openConfig()">⚙ 配置</button>
-  <div style="font-weight: bold;">机械臂控制系统1.17</div>
+  <div style="font-weight: bold;">机械臂控制系统1.220</div>
   <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
 </header>
 
@@ -347,6 +347,8 @@ let currentOperatingJoint = null;
 // 新增：指令队列，确保蓝牙指令按顺序执行
 let commandQueue = [];
 let isProcessingQueue = false;
+// 新增：指令队列长度阈值，超过此值不再接收新指令
+const QUEUE_LENGTH_THRESHOLD = 10;
 // 新增：指令超时时间（ms）
 const CMD_TIMEOUT = 2000; // 指令超时时间（ms）
 let cmdTimeoutTimers = {}; // 记录每个舵机的超时计时器
@@ -547,6 +549,12 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
   const newCmd = calculateLevelCmd(originalCmd, level);
   if (!newCmd) return;
 
+  // 检查队列长度，超过阈值则不发送新指令
+  if (commandQueue.length >= QUEUE_LENGTH_THRESHOLD) {
+    console.warn(`指令队列已满（${commandQueue.length}条），拒绝滑块操作指令：${newCmd}`);
+    return;
+  }
+
   if (!isMoving || !sliderTimers[sliderId]) {
     send(newCmd);
   }
@@ -556,7 +564,10 @@ function judgeSliderLevel(sliderId, sliderEl, isMoving = false) {
 
   if (sliderTimers[sliderId]) clearInterval(sliderTimers[sliderId]);
   sliderTimers[sliderId] = setInterval(() => {
-    if (sliderHeld[sliderId]) send(newCmd);
+    // 每次发送前再次检查队列长度
+    if (sliderHeld[sliderId] && commandQueue.length < QUEUE_LENGTH_THRESHOLD) {
+      send(newCmd);
+    }
   }, interval);
 }
 
@@ -781,8 +792,19 @@ async function send(cmd) {
     return;
   }
 
-  // 3. 将指令加入队列，避免并发操作
+  // 3. 检查队列长度，超过阈值则拒绝新指令
+  // 但允许抬起指令（包含PDST或1500T的指令）和停止指令（$DST!）
+  const isLiftOrStopCmd = cmd.includes("PDST") || cmd.includes("1500T") || cmd === "$DST!";
+  if (commandQueue.length >= QUEUE_LENGTH_THRESHOLD && !isLiftOrStopCmd) {
+    console.warn(`指令队列已满（${commandQueue.length}条），拒绝新指令：${cmd}`);
+    status.innerText = `指令队列已满，请稍后再试`;
+    status.style.color = "orange";
+    return;
+  }
+
+  // 4. 将指令加入队列，避免并发操作
   commandQueue.push(cmd);
+  console.log(`指令已加入队列，当前队列长度：${commandQueue.length}`);
   processCommandQueue();
 }
 
@@ -867,7 +889,7 @@ async function processCommandQueue() {
     }
     
     // 添加小延迟，避免GATT操作冲突
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 150));
   }
   
   isProcessingQueue = false;
@@ -934,7 +956,6 @@ window.addEventListener('beforeunload', function() {
 
 </body>
 </html>
-
 
 
 
