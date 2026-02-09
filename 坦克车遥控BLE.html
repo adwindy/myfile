@@ -292,8 +292,8 @@
         
         // 控制区域和元素尺寸
         const controlAreaRect = controlArea.getBoundingClientRect();
-        const centralBtnCenterX = controlAreaRect.width / 2;
-        const centralBtnCenterY = controlAreaRect.height / 2;
+        window.centralBtnCenterX = controlAreaRect.width / 2;
+        window.centralBtnCenterY = controlAreaRect.height / 2;
         const maxDragDistance = 150; // 最大拖动距离（对应速度100）
         
         // 初始化
@@ -318,8 +318,8 @@
         // 更新控制区域尺寸
         function updateControlAreaSize() {
             const rect = controlArea.getBoundingClientRect();
-            centralBtnCenterX = rect.width / 2;
-            centralBtnCenterY = rect.height / 2;
+            window.centralBtnCenterX = rect.width / 2;
+            window.centralBtnCenterY = rect.height / 2;
         }
         
         // 初始化履带拖动
@@ -374,12 +374,15 @@
                 const distanceFromCenter = (centerY - clampedY) / (maxY - centerY);
                 const speed = Math.round(distanceFromCenter * 100);
                 
+                // 限制速度范围在-100到100之间
+                const clampedSpeed = Math.max(-100, Math.min(100, speed));
+                
                 // 更新速度值
                 if (isLeft) {
-                    leftSpeed = speed;
+                    leftSpeed = clampedSpeed;
                     leftSpeedDisplay.textContent = leftSpeed;
                 } else {
-                    rightSpeed = speed;
+                    rightSpeed = clampedSpeed;
                     rightSpeedDisplay.textContent = rightSpeed;
                 }
                 
@@ -410,11 +413,20 @@
         function initCentralBtnDrag() {
             let startX = 0;
             let startY = 0;
-            let btnStartX = centralBtnCenterX - 75;
-            let btnStartY = centralBtnCenterY - 75;
+            let btnStartX = window.centralBtnCenterX - 75;
+            let btnStartY = window.centralBtnCenterY - 75;
             
             // 鼠标/触摸开始
-            centralBtn.addEventListener('mousedown', startCentralDrag);
+            centralBtn.addEventListener('mousedown', (e) => {
+                startCentralDrag(e);
+                
+                // 长按检测（1秒后切换旋转模式）
+                longPressTimer = setTimeout(() => {
+                    rotateMode = true;
+                    centralBtn.classList.add('rotate-mode');
+                    centralBtn.textContent = '旋转';
+                }, 1000);
+            });
             centralBtn.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 startCentralDrag(e.touches[0]);
@@ -442,8 +454,8 @@
                 isDragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
-                btnStartX = parseFloat(getComputedStyle(centralBtn).left) || centralBtnCenterX - 75;
-                btnStartY = parseFloat(getComputedStyle(centralBtn).top) || centralBtnCenterY - 75;
+                btnStartX = parseFloat(getComputedStyle(centralBtn).left) || window.centralBtnCenterX - 75;
+                btnStartY = parseFloat(getComputedStyle(centralBtn).top) || window.centralBtnCenterY - 75;
                 
                 // 清除之前的长按计时器（如果有）
                 if (longPressTimer) clearTimeout(longPressTimer);
@@ -459,19 +471,24 @@
                 let newX = btnStartX + deltaX;
                 let newY = btnStartY + deltaY;
                 
+                // 旋转模式下只允许左右拖动
+                if (rotateMode) {
+                    newY = window.centralBtnCenterY - 75;
+                }
+                
                 // 限制拖动范围
-                newX = Math.max(centralBtnCenterX - 75 - maxDragDistance, 
-                               Math.min(centralBtnCenterX - 75 + maxDragDistance, newX));
-                newY = Math.max(centralBtnCenterY - 75 - maxDragDistance, 
-                               Math.min(centralBtnCenterY - 75 + maxDragDistance, newY));
+                newX = Math.max(window.centralBtnCenterX - 75 - maxDragDistance, 
+                               Math.min(window.centralBtnCenterX - 75 + maxDragDistance, newX));
+                newY = Math.max(window.centralBtnCenterY - 75 - maxDragDistance, 
+                               Math.min(window.centralBtnCenterY - 75 + maxDragDistance, newY));
                 
                 // 更新按钮位置
                 centralBtn.style.left = `${newX}px`;
                 centralBtn.style.top = `${newY}px`;
                 
                 // 计算相对于中心的偏移量（归一化到-1 ~ 1）
-                const offsetX = (newX - (centralBtnCenterX - 75)) / maxDragDistance;
-                const offsetY = (newY - (centralBtnCenterY - 75)) / maxDragDistance * -1; // Y轴反向（上为正）
+                const offsetX = (newX - (window.centralBtnCenterX - 75)) / maxDragDistance;
+                const offsetY = (newY - (window.centralBtnCenterY - 75)) / maxDragDistance * -1; // Y轴反向（上为正）
                 
                 // 根据模式计算速度
                 if (rotateMode) {
@@ -512,8 +529,8 @@
                     
                     // 回弹到中心位置
                     centralBtn.style.transition = 'all 0.3s ease';
-                    centralBtn.style.left = `${centralBtnCenterX - 75}px`;
-                    centralBtn.style.top = `${centralBtnCenterY - 75}px`;
+                    centralBtn.style.left = `${window.centralBtnCenterX - 75}px`;
+                    centralBtn.style.top = `${window.centralBtnCenterY - 75}px`;
                     
                     // 如果是旋转模式，退出并恢复样式
                     if (rotateMode) {
