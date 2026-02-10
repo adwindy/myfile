@@ -857,8 +857,18 @@
             leftSpeedDisplay.textContent = '0';
             rightSpeedDisplay.textContent = '0';
             
-            resetTrackIndicators();
-            resetTrackRotations();
+            // 重置履带位置和角度
+            leftTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
+            rightTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
+            leftTrack.style.top = '0px';
+            rightTrack.style.top = '0px';
+            leftTrack.style.transform = 'rotate(0deg)';
+            rightTrack.style.transform = 'rotate(0deg)';
+            
+            setTimeout(() => {
+                leftTrack.style.transition = 'all 0.1s ease';
+                rightTrack.style.transition = 'all 0.1s ease';
+            }, 500);
             
             sendData(0, 0);
         }
