@@ -679,6 +679,11 @@
                         longPressTimer = null;
                     }
                     
+                    // 回弹到初始位置
+                    centralBtn.style.transition = 'all 0.5s ease';
+                    centralBtn.style.left = `${controlAreaRect.width / 2 - 30}px`;
+                    centralBtn.style.top = `${controlAreaRect.height / 2 - 30}px`;
+                    
                     // 重置履带位置和角度
                     leftTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
                     rightTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
@@ -689,14 +694,23 @@
                     
                     // 如果是旋转模式，退出并恢复样式
                     if (rotateMode) {
-                        rotateMode = false;
-                        centralBtn.classList.remove('rotate-mode');
-                        centralBtn.textContent = '控制';
-                        stopAll(); // 旋转模式结束后停止
+                        setTimeout(() => {
+                            rotateMode = false;
+                            centralBtn.classList.remove('rotate-mode');
+                            centralBtn.textContent = '控制';
+                            stopAll(); // 旋转模式结束后停止
+                        }, 500);
                     } else {
                         // 常规模式释放后停止
-                        stopAll();
+                        setTimeout(stopAll, 500);
                     }
+                    
+                    // 重置过渡效果
+                    setTimeout(() => {
+                        centralBtn.style.transition = 'all 0.2s ease';
+                        leftTrack.style.transition = 'all 0.1s ease';
+                        rightTrack.style.transition = 'all 0.1s ease';
+                    }, 500);
                 }
             }
         }
