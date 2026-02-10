@@ -87,9 +87,9 @@
         /* 履带样式 - 向上伸展 */
         .track {
             position: absolute;
-            top: 0;
+            bottom: 0;
             width: 20px;
-            height: 100%;
+            height: 25%;
             background: linear-gradient(
                 to top,
                 rgba(120, 120, 120, 0.05) 0%,
@@ -108,11 +108,11 @@
         }
         
         .track-left {
-            left: calc(50% - 40px);
+            left: calc(50% - 30px);
         }
         
         .track-right {
-            right: calc(50% - 40px);
+            right: calc(50% - 30px);
         }
         
         /* 履带刻度和指示 */
@@ -363,6 +363,7 @@
         let longPressTimer = null; // 长按计时器
         let isDragging = false;   // 是否正在拖动
         let dragElement = null;   // 当前拖动的元素
+        let hasMoved = false;     // 标记是否有拖动行为
         
         // DOM元素
         const connectBtn = document.getElementById('connectBtn');
@@ -512,6 +513,8 @@
             let startY = 0;
             let btnStartX = 0;
             let btnStartY = 0;
+            let btnInitialCenterX = 0;
+            let btnInitialCenterY = 0;
             
             // 鼠标/触摸开始
             centralBtn.addEventListener('mousedown', (e) => {
@@ -519,9 +522,11 @@
                 
                 // 长按检测（1秒后切换旋转模式）
                 longPressTimer = setTimeout(() => {
-                    rotateMode = true;
-                    centralBtn.classList.add('rotate-mode');
-                    centralBtn.textContent = '旋转模式';
+                    if (!hasMoved) {
+                        rotateMode = true;
+                        centralBtn.classList.add('rotate-mode');
+                        centralBtn.textContent = '旋转模式';
+                    }
                 }, 1000);
             });
             centralBtn.addEventListener('touchstart', (e) => {
@@ -530,9 +535,11 @@
                 
                 // 长按检测（1秒后切换旋转模式）
                 longPressTimer = setTimeout(() => {
-                    rotateMode = true;
-                    centralBtn.classList.add('rotate-mode');
-                    centralBtn.textContent = '旋转模式';
+                    if (!hasMoved) {
+                        rotateMode = true;
+                        centralBtn.classList.add('rotate-mode');
+                        centralBtn.textContent = '旋转模式';
+                    }
                 }, 1000);
             });
             
@@ -551,11 +558,16 @@
                 if (isDragging) return;
                 isDragging = true;
                 dragElement = centralBtn;
+                hasMoved = false;
                 
                 startX = e.clientX;
                 startY = e.clientY;
                 btnStartX = parseFloat(getComputedStyle(centralBtn).left) || controlAreaRect.width / 2 - 60;
                 btnStartY = parseFloat(getComputedStyle(centralBtn).top) || controlAreaRect.height / 2 - 60;
+                
+                // 保存按钮的初始中心点位置
+                btnInitialCenterX = btnStartX + 30; // 按钮宽度的一半
+                btnInitialCenterY = btnStartY + 30; // 按钮高度的一半
                 
                 // 清除之前的长按计时器（如果有）
                 if (longPressTimer) clearTimeout(longPressTimer);
@@ -563,6 +575,9 @@
             
             function dragCentral(e) {
                 if (!isDragging || dragElement !== centralBtn) return;
+                
+                // 标记有拖动行为
+                hasMoved = true;
                 
                 // 计算拖动偏移
                 const deltaX = e.clientX - startX;
@@ -609,16 +624,41 @@
                     rightSpeed = Math.max(-100, Math.min(100, rightSpeed));
                 }
                 
-                // 计算履带角度（基于速度差）
-                const speedDiff = rightSpeed - leftSpeed;
-                const angle = Math.round((speedDiff / 200) * 30); // 最大30度
+                // 计算按钮当前位置的中心点
+                const btnCenterX = newX + 30; // 按钮宽度的一半
+                const btnCenterY = newY + 30; // 按钮高度的一半
+                
+                // 计算从初始中心点到当前中心点的角度
+                const angleDeltaX = btnCenterX - btnInitialCenterX;
+                const angleDeltaY = btnCenterY - btnInitialCenterY;
+                const angle = Math.round(Math.atan2(angleDeltaY, angleDeltaX) * 180 / Math.PI); // 转换为度数
                 
                 // 更新履带位置和角度
-                const trackOffsetY = -offsetY * 50; // 履带上下移动距离
-                leftTrack.style.top = `${trackOffsetY}px`;
-                rightTrack.style.top = `${trackOffsetY}px`;
-                leftTrack.style.transform = `rotate(${angle}deg)`;
-                rightTrack.style.transform = `rotate(${angle}deg)`;
+                if (rotateMode) {
+                    // 旋转模式：履带跟随按钮一起移动，以按钮圆心为中点旋转
+                    const trackDistance = 30; // 履带到按钮中心的距离
+                    
+                    // 计算左右履带的新位置
+                    const leftTrackX = btnCenterX - trackDistance;
+                    const rightTrackX = btnCenterX + trackDistance;
+                    const trackY = btnCenterY + 15; // 履带底部与按钮中心对齐
+                    
+                    leftTrack.style.left = `${leftTrackX}px`;
+                    rightTrack.style.right = `${controlAreaRect.width - rightTrackX}px`;
+                    leftTrack.style.bottom = `${controlAreaRect.height - trackY}px`;
+                    rightTrack.style.bottom = `${controlAreaRect.height - trackY}px`;
+                    
+                    // 以按钮圆心为中点旋转
+                    leftTrack.style.transform = `rotate(${angle}deg)`;
+                    rightTrack.style.transform = `rotate(${angle}deg)`;
+                } else {
+                    // 常规模式：履带上下移动
+                    const trackOffsetY = -offsetY * 50; // 履带上下移动距离
+                    leftTrack.style.top = `${trackOffsetY}px`;
+                    rightTrack.style.top = `${trackOffsetY}px`;
+                    leftTrack.style.transform = `rotate(${angle}deg)`;
+                    rightTrack.style.transform = `rotate(${angle}deg)`;
+                }
                 
                 // 更新显示
                 leftSpeedDisplay.textContent = leftSpeed;
@@ -639,11 +679,6 @@
                         longPressTimer = null;
                     }
                     
-                    // 回弹到中心位置
-                    centralBtn.style.transition = 'all 0.5s ease';
-                    centralBtn.style.left = `${controlAreaRect.width / 2 - 30}px`;
-                    centralBtn.style.top = `${controlAreaRect.height / 2 - 30}px`;
-                    
                     // 重置履带位置和角度
                     leftTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
                     rightTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
@@ -654,23 +689,14 @@
                     
                     // 如果是旋转模式，退出并恢复样式
                     if (rotateMode) {
-                        setTimeout(() => {
-                            rotateMode = false;
-                            centralBtn.classList.remove('rotate-mode');
-                            centralBtn.textContent = '控制';
-                            stopAll(); // 旋转模式结束后停止
-                        }, 500);
+                        rotateMode = false;
+                        centralBtn.classList.remove('rotate-mode');
+                        centralBtn.textContent = '控制';
+                        stopAll(); // 旋转模式结束后停止
                     } else {
                         // 常规模式释放后停止
-                        setTimeout(stopAll, 500);
+                        stopAll();
                     }
-                    
-                    // 重置过渡效果
-                    setTimeout(() => {
-                        centralBtn.style.transition = 'all 0.2s ease';
-                        leftTrack.style.transition = 'all 0.1s ease';
-                        rightTrack.style.transition = 'all 0.1s ease';
-                    }, 500);
                 }
             }
         }
