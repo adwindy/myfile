@@ -130,11 +130,8 @@ main {
   padding: 10px;
   max-width: 600px;
   margin: 0 auto;
-  /* 核心修改：原高度 calc(100vw * 0.9) 增加50% → calc(100vw * 1.35) */
   height: calc(100vw * 1.35);
-  /* 原max-height 540px 增加50% → 810px */
   max-height: 810px;
-  /* 原min-height 350px 增加50% → 525px */
   min-height: 525px;
   width: 100%;
   box-sizing: border-box;
@@ -144,6 +141,53 @@ main {
   display: flex;
   justify-content: space-around;
   align-items: center;
+}
+
+/* 控制区域划分容器 */
+.control-area-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  z-index: 5;
+}
+
+/* 左/中/右三个控制区域 */
+.control-area {
+  flex: 1;
+  height: 100%;
+  /* 辅助调试：显示区域边界，上线后可注释 */
+  /* border: 1px dashed rgba(0,0,0,0.1); */
+}
+
+/* 可拖动的圆形控制按钮 */
+.control-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ff9800;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  cursor: move;
+  z-index: 15;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s ease; /* 增加过渡动画，用于回弹 */
+}
+
+.control-knob:active {
+  background: #ff5722;
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+/* 回弹动画 */
+.control-knob.animate-return {
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .arm-bg {
@@ -295,9 +339,19 @@ main {
 <div id="statusInfo">未连接蓝牙</div>
 
 <main>
+  <!-- 控制区域划分 -->
+  <div class="control-area-container">
+    <div class="control-area" id="leftArea"></div>
+    <div class="control-area" id="middleArea"></div>
+    <div class="control-area" id="rightArea"></div>
+  </div>
+  
+  <!-- 可拖动的圆形控制按钮 -->
+  <div class="control-knob" id="controlKnob"></div>
+  
   <img class="arm-bg" src="tank.jpg" onerror="handleImageError(this)" alt="坦克背景" />
   
-  <!-- 左履带竖向滑块 - 使用自定义滑块 -->
+  <!-- 左履带竖向滑块 -->
   <div class="slider-group left-track">
     <button class="label-btn" id="R1">前进</button>
     <span class="speed-percent" id="leftSpeedPercent">0%</span>
@@ -307,7 +361,7 @@ main {
     <button class="label-btn" id="L1">后退</button>
   </div>
   
-  <!-- 右履带竖向滑块 - 使用自定义滑块 -->
+  <!-- 右履带竖向滑块 -->
   <div class="slider-group right-track">
     <button class="label-btn" id="R2">前进</button>
     <span class="speed-percent" id="rightSpeedPercent">0%</span>
@@ -380,6 +434,16 @@ let sliderStartY = 0;
 let sliderStartTop = 50; // 初始位置（百分比）
 let sliderContainerHeight = 0;
 
+// 圆形控制按钮相关变量
+let isKnobDragging = false;
+let knobStartX = 0;
+let knobStartY = 0;
+let knobStartLeft = 50; // 初始水平位置（百分比）
+let knobStartTop = 50;  // 初始垂直位置（百分比）
+const controlKnob = document.getElementById('controlKnob');
+const mainContainer = document.querySelector('main');
+let mainRect = null; // 主容器尺寸信息
+
 // 速度显示元素
 const leftSpeedDisplay = document.getElementById('leftSpeed');
 const rightSpeedDisplay = document.getElementById('rightSpeed');
@@ -423,15 +487,228 @@ document.addEventListener('DOMContentLoaded', function() {
   // 初始化自定义竖向滑块
   initVerticalSliders();
   
-  const mainContainer = document.querySelector('main');
+  // 初始化圆形控制按钮
+  initControlKnob();
+  
   if (mainContainer) {
     mainContainer.addEventListener('contextmenu', function(e) {
       e.preventDefault();
     });
+    // 监听容器尺寸变化，更新主容器信息
+    mainRect = mainContainer.getBoundingClientRect();
+    window.addEventListener('resize', () => {
+      mainRect = mainContainer.getBoundingClientRect();
+      // 重新校准旋钮位置
+      updateKnobPosition(50, 50);
+    });
   }
 });
 
-// 初始化自定义竖向滑块 - 核心修复
+// 初始化圆形控制按钮 - 核心新增功能
+function initControlKnob() {
+  if (!controlKnob || !mainContainer) return;
+  
+  // 强制校准按钮到绝对中心
+  updateKnobPosition(50, 50, true);
+  
+  // 鼠标事件
+  controlKnob.addEventListener('mousedown', startKnobDrag);
+  // 触摸事件（移动端）
+  controlKnob.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    startKnobDrag(e, true);
+  }, { passive: false });
+  
+  // 全局鼠标/触摸事件
+  document.addEventListener('mousemove', dragKnob);
+  document.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    dragKnob(e, true);
+  }, { passive: false });
+  document.addEventListener('mouseup', endKnobDrag);
+  document.addEventListener('touchend', endKnobDrag);
+  document.addEventListener('touchcancel', endKnobDrag);
+}
+
+// 开始拖动圆形按钮
+function startKnobDrag(e, isTouch = false) {
+  isKnobDragging = true;
+  mainRect = mainContainer.getBoundingClientRect();
+  
+  // 移除回弹动画类
+  controlKnob.classList.remove('animate-return');
+  
+  // 记录初始位置
+  const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+  const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+  
+  knobStartX = clientX;
+  knobStartY = clientY;
+  knobStartLeft = getKnobHorizontalPercent();
+  knobStartTop = getKnobVerticalPercent();
+  
+  // 禁用滑块独立操作
+  currentOperatingJoint = -1; // 标记为旋钮控制模式
+  
+  // 隐藏鼠标样式
+  document.body.style.cursor = 'move';
+  controlKnob.style.zIndex = 20;
+}
+
+// 拖动圆形按钮
+function dragKnob(e, isTouch = false) {
+  if (!isKnobDragging || !mainRect) return;
+  
+  // 获取当前鼠标/触摸位置
+  const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+  const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+  
+  // 计算偏移量
+  const deltaX = clientX - knobStartX;
+  const deltaY = clientY - knobStartY;
+  
+  // 转换为百分比（1:1等比例转换）
+  const deltaXPercent = (deltaX / mainRect.width) * 100;
+  const deltaYPercent = (deltaY / mainRect.height) * 100;
+  
+  // 计算新位置（限制在0-100%范围内）
+  let newLeftPercent = Math.max(0, Math.min(100, knobStartLeft + deltaXPercent));
+  let newTopPercent = Math.max(0, Math.min(100, knobStartTop + deltaYPercent));
+  
+  // 更新旋钮位置
+  updateKnobPosition(newLeftPercent, newTopPercent);
+  
+  // 根据旋钮位置控制滑块
+  controlSlidersByKnob(newLeftPercent, newTopPercent);
+}
+
+// 结束拖动圆形按钮 - 增加回弹逻辑
+function endKnobDrag() {
+  if (!isKnobDragging) return;
+  
+  isKnobDragging = false;
+  document.body.style.cursor = 'default';
+  controlKnob.style.zIndex = 15;
+  
+  // 添加回弹动画类
+  controlKnob.classList.add('animate-return');
+  
+  // 回弹到中心位置
+  updateKnobPosition(50, 50);
+  
+  // 滑块也回弹到中间位置
+  controlSlidersByKnob(50, 50);
+  
+  // 停止所有滑块计时器
+  Object.keys(sliderTimers).forEach(id => {
+    if (sliderTimers[id]) {
+      clearInterval(sliderTimers[id]);
+      delete sliderTimers[id];
+    }
+  });
+  
+  // 恢复滑块操作权限
+  currentOperatingJoint = null;
+  
+  // 动画结束后移除动画类
+  setTimeout(() => {
+    controlKnob.classList.remove('animate-return');
+  }, 300);
+}
+
+// 更新圆形按钮位置 - 修复垂直居中
+function updateKnobPosition(leftPercent, topPercent, force = false) {
+  // 强制设置为精确的百分比，确保居中
+  const finalLeft = force ? 50 : leftPercent;
+  const finalTop = force ? 50 : topPercent;
+  
+  controlKnob.style.left = `${finalLeft}%`;
+  controlKnob.style.top = `${finalTop}%`;
+  controlKnob.style.transform = 'translate(-50%, -50%)';
+}
+
+// 获取旋钮水平位置百分比
+function getKnobHorizontalPercent() {
+  const left = parseFloat(controlKnob.style.left) || 50;
+  return left;
+}
+
+// 获取旋钮垂直位置百分比
+function getKnobVerticalPercent() {
+  const top = parseFloat(controlKnob.style.top) || 50;
+  return top;
+}
+
+// 根据旋钮位置控制滑块 - 核心联动逻辑（修复方向和比例）
+function controlSlidersByKnob(horizontalPercent, verticalPercent) {
+  // 计算垂直偏移（相对于中间位置50%）
+  const center = 50;
+  const verticalOffset = verticalPercent - center;
+  
+  // 1:1等比例转换（修复比例问题），限制最大±100%
+  const speedPercent = Math.max(-100, Math.min(100, verticalOffset * 2));
+  
+  // 反转方向（修复上下颠倒问题）：按钮向上 → 滑块向上
+  const reversedSpeedPercent = -speedPercent;
+  
+  // 确定控制区域：左(0-33%)、中(33-66%)、右(66-100%)
+  let controlArea = 'middle';
+  if (horizontalPercent < 33) {
+    controlArea = 'left';
+  } else if (horizontalPercent > 66) {
+    controlArea = 'right';
+  }
+  
+  // 根据区域控制对应滑块
+  switch(controlArea) {
+    case 'left':
+      // 仅控制左滑块
+      updateSliderByKnob(1, reversedSpeedPercent);
+      break;
+    case 'middle':
+      // 同时控制左右滑块
+      updateSliderByKnob(1, reversedSpeedPercent);
+      updateSliderByKnob(2, reversedSpeedPercent);
+      break;
+    case 'right':
+      // 仅控制右滑块
+      updateSliderByKnob(2, reversedSpeedPercent);
+      break;
+  }
+  
+  // 更新状态显示
+  const status = document.getElementById('statusInfo');
+  if (Math.abs(reversedSpeedPercent) > 0) {
+    status.innerText = `旋钮控制(${controlArea}区域)：速度 ${reversedSpeedPercent > 0 ? '+' : ''}${reversedSpeedPercent}%`;
+    status.style.color = "#ff9800";
+  } else {
+    if (parseInt(leftSpeedDisplay.textContent) === 0 && parseInt(rightSpeedDisplay.textContent) === 0) {
+      status.innerText = "坦克已停止";
+      status.style.color = "#666";
+    }
+  }
+}
+
+// 根据旋钮控制更新滑块位置和速度（修复比例和方向）
+function updateSliderByKnob(sliderId, speedPercent) {
+  // 1:1等比例转换：速度百分比 → 滑块位置百分比（0-100%）
+  // 例如：速度+100% → 滑块位置100%（顶部），速度-100% → 滑块位置0%（底部）
+  const sliderPercent = 50 + (speedPercent / 2);
+  
+  // 限制滑块位置在0-100%
+  const clampedPercent = Math.max(0, Math.min(100, sliderPercent));
+  
+  // 更新滑块位置
+  const slider = document.getElementById(`slider${sliderId}`);
+  if (slider) {
+    updateSliderPosition(slider, clampedPercent);
+  }
+  
+  // 更新速度显示和发送指令
+  updateSliderSpeed(sliderId, clampedPercent);
+}
+
+// 初始化自定义竖向滑块
 function initVerticalSliders() {
   const sliders = document.querySelectorAll('.vertical-slider');
   
@@ -444,12 +721,18 @@ function initVerticalSliders() {
     
     // 鼠标事件
     slider.addEventListener('mousedown', function(e) {
+      // 如果旋钮正在拖动，禁用滑块独立操作
+      if (isKnobDragging) return;
+      
       e.preventDefault();
       startSliderDrag(e, sliderId, slider, container);
     });
     
     // 触摸事件（移动端）
     slider.addEventListener('touchstart', function(e) {
+      // 如果旋钮正在拖动，禁用滑块独立操作
+      if (isKnobDragging) return;
+      
       e.preventDefault();
       startSliderDrag(e, sliderId, slider, container, true);
     }, { passive: false });
@@ -490,7 +773,7 @@ function startSliderDrag(e, sliderId, slider, container, isTouch = false) {
 
 // 拖动滑块
 function dragSlider(e) {
-  if (!activeSlider) return;
+  if (!activeSlider || isKnobDragging) return;
   
   e.preventDefault();
   
@@ -573,11 +856,7 @@ function updateSliderSpeed(sliderId, percent) {
     rightSpeedDisplay.style.color = speed !== 0 ? (speed > 0 ? '#16a34a' : '#ef4444') : '#666';
   }
   
-  const status = document.getElementById('statusInfo');
   if (speed !== 0) {
-    status.innerText = `履带${sliderId}：${direction} ${speedPercent}`;
-    status.style.color = "#3b82f6";
-    
     // 确定方向按钮
     const leftBtnId = `L${sliderId}`;
     const rightBtnId = `R${sliderId}`;
@@ -623,11 +902,6 @@ function updateSliderSpeed(sliderId, percent) {
     if (currentOperatingJoint === parseInt(sliderId)) {
       currentOperatingJoint = null;
     }
-    
-    if (parseInt(leftSpeedDisplay.textContent) === 0 && parseInt(rightSpeedDisplay.textContent) === 0) {
-      status.innerText = "坦克已停止";
-      status.style.color = "#666";
-    }
   }
 }
 
@@ -671,9 +945,10 @@ function handleBtnPress(e) {
   
   // 紧急停止按钮特殊处理
   if (btnId === 'EMERGENCY_STOP') {
-    // 回弹所有滑块
+    // 回弹所有滑块和控制旋钮
     updateSliderPosition(document.getElementById('slider1'), 50);
     updateSliderPosition(document.getElementById('slider2'), 50);
+    updateKnobPosition(50, 50, true);
     updateSliderSpeed(1, 50);
     updateSliderSpeed(2, 50);
   }
@@ -1002,6 +1277,9 @@ window.onload = () => {
   // 初始化速度显示
   updateSliderSpeed(1, 50);
   updateSliderSpeed(2, 50);
+  
+  // 确保旋钮初始化在绝对中心
+  updateKnobPosition(50, 50, true);
 };
 
 window.addEventListener('beforeunload', function() {
