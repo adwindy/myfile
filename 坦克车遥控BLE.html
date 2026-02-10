@@ -14,18 +14,21 @@
         }
         
         body {
-            max-width: 900px;
-            margin: 20px auto;
-            padding: 20px;
+            width: 100%;
+            margin: 0;
+            padding: 0;
             background-color: #f0f0f0;
             overflow-x: hidden;
         }
         
         .container {
             background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            padding: 15px;
+            border-radius: 0;
+            box-shadow: none;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
         
         h1 {
@@ -73,8 +76,8 @@
         .control-area {
             position: relative;
             width: 100%;
-            height: 500px;
-            margin: 30px auto;
+            height: 60vh;
+            margin: 15px 0;
             border: 2px solid #ddd;
             border-radius: 10px;
             background-color: #f8f9fa;
@@ -85,7 +88,7 @@
         .track {
             position: absolute;
             top: 0;
-            width: 80px;
+            width: 20px;
             height: 100%;
             background: linear-gradient(
                 to top,
@@ -94,7 +97,7 @@
                 rgba(80, 80, 80, 0.25) 70%,
                 rgba(60, 60, 60, 0.1) 100%
             );
-            border-radius: 10px;
+            border-radius: 5px;
             cursor: grab;
             transition: all 0.1s ease;
             transform-origin: bottom center;
@@ -105,11 +108,11 @@
         }
         
         .track-left {
-            left: 150px;
+            left: calc(50% - 40px);
         }
         
         .track-right {
-            right: 150px;
+            right: calc(50% - 40px);
         }
         
         /* 履带刻度和指示 */
@@ -170,8 +173,8 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 120px;
-            height: 120px;
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
             background: radial-gradient(circle, rgba(180, 180, 180, 0.2) 0%, rgba(150, 150, 150, 0.1) 70%);
             transform: translate(-50%, -50%);
@@ -180,14 +183,14 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 22px;
+            font-size: 14px;
             color: #555;
             border: 2px dashed rgba(100, 100, 100, 0.4);
             z-index: 10;
             backdrop-filter: blur(2px);
             box-shadow: 
-                inset 0 0 15px rgba(255, 255, 255, 0.3),
-                0 5px 15px rgba(0, 0, 0, 0.1);
+                inset 0 0 10px rgba(255, 255, 255, 0.3),
+                0 3px 10px rgba(0, 0, 0, 0.1);
         }
         
         .central-control:active {
@@ -314,18 +317,12 @@
         <div class="control-area" id="controlArea">
             <!-- 左履带 -->
             <div class="track track-left" id="leftTrack">
-                <div class="track-label">左履带</div>
-                <div class="track-indicator" id="leftIndicator"></div>
                 <div class="track-center-line"></div>
-                <div class="track-rotation" id="leftRotation">0°</div>
             </div>
             
             <!-- 右履带 -->
             <div class="track track-right" id="rightTrack">
-                <div class="track-label">右履带</div>
-                <div class="track-indicator" id="rightIndicator"></div>
                 <div class="track-center-line"></div>
-                <div class="track-rotation" id="rightRotation">0°</div>
             </div>
             
             <!-- 中央控制按钮 -->
@@ -377,22 +374,12 @@
         const leftSpeedDisplay = document.getElementById('leftSpeed');
         const rightSpeedDisplay = document.getElementById('rightSpeed');
         const stopBtn = document.getElementById('stopBtn');
-        const leftIndicator = document.getElementById('leftIndicator');
-        const rightIndicator = document.getElementById('rightIndicator');
-        const leftRotation = document.getElementById('leftRotation');
-        const rightRotation = document.getElementById('rightRotation');
-        const dragLine = document.getElementById('dragLine');
         
         // 控制区域和元素尺寸
         let controlAreaRect = controlArea.getBoundingClientRect();
         const trackHeight = controlAreaRect.height;
         const centerY = trackHeight / 2;
         const maxDragDistance = 200; // 最大拖动距离（对应速度100）
-        const indicatorCenter = centerY;
-        
-        // 初始化指示器位置
-        leftIndicator.style.top = `${indicatorCenter - 6}px`;
-        rightIndicator.style.top = `${indicatorCenter - 6}px`;
         
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
@@ -403,8 +390,8 @@
             stopBtn.addEventListener('click', stopAll);
             
             // 初始化履带拖动事件
-            initTrackDrag(leftTrack, leftIndicator, leftRotation, true);
-            initTrackDrag(rightTrack, rightIndicator, rightRotation, false);
+            initTrackDrag(leftTrack, true);
+            initTrackDrag(rightTrack, false);
             
             // 初始化中央按钮事件
             initCentralBtnDrag();
@@ -416,80 +403,64 @@
         // 更新控制区域尺寸
         function updateControlAreaSize() {
             controlAreaRect = controlArea.getBoundingClientRect();
-            const newCenterY = controlAreaRect.height / 2;
-            
-            // 更新指示器位置
-            leftIndicator.style.top = `${newCenterY - 6}px`;
-            rightIndicator.style.top = `${newCenterY - 6}px`;
         }
         
         // 初始化履带拖动
-        function initTrackDrag(trackElement, indicator, rotationDisplay, isLeft) {
+        function initTrackDrag(trackElement, isLeft) {
             let startY = 0;
-            let startIndicatorY = 0;
+            let startTrackY = 0;
             
             // 鼠标/触摸开始
-            trackElement.addEventListener('mousedown', (e) => {
-                startDrag(e, indicator, rotationDisplay, isLeft);
-            });
+            trackElement.addEventListener('mousedown', startDrag);
             trackElement.addEventListener('touchstart', (e) => {
                 e.preventDefault();
-                startDrag(e.touches[0], indicator, rotationDisplay, isLeft);
+                startDrag(e.touches[0]);
             });
             
             // 鼠标/触摸移动
-            document.addEventListener('mousemove', (e) => {
-                drag(e, indicator, rotationDisplay, isLeft);
-            });
+            document.addEventListener('mousemove', drag);
             document.addEventListener('touchmove', (e) => {
                 e.preventDefault();
-                drag(e.touches[0], indicator, rotationDisplay, isLeft);
+                drag(e.touches[0]);
             });
             
             // 鼠标/触摸结束
             document.addEventListener('mouseup', endDrag);
             document.addEventListener('touchend', endDrag);
             
-            function startDrag(e, indicator, rotationDisplay, isLeft) {
+            function startDrag(e) {
                 if (isDragging) return;
                 isDragging = true;
                 dragElement = trackElement;
                 
                 startY = e.clientY;
-                startIndicatorY = parseFloat(getComputedStyle(indicator).top) || indicatorCenter - 6;
+                startTrackY = parseFloat(getComputedStyle(trackElement).top) || 0;
                 
                 // 添加拖动视觉效果
                 trackElement.style.background = 'linear-gradient(to top, rgba(120, 120, 120, 0.15) 0%, rgba(100, 100, 100, 0.25) 30%, rgba(80, 80, 80, 0.35) 70%, rgba(60, 60, 60, 0.2) 100%)';
             }
             
-            function drag(e, indicator, rotationDisplay, isLeft) {
+            function drag(e) {
                 if (!isDragging || dragElement !== trackElement) return;
                 
                 // 计算拖动距离
                 const deltaY = e.clientY - startY;
-                const newY = startIndicatorY + deltaY;
+                const newY = startTrackY + deltaY;
                 
                 // 限制拖动范围
-                const minY = 10;
-                const maxY = trackHeight - 20;
+                const minY = -50;
+                const maxY = 50;
                 const clampedY = Math.max(minY, Math.min(maxY, newY));
                 
-                // 更新指示器位置
-                indicator.style.top = `${clampedY}px`;
+                // 更新履带位置
+                trackElement.style.top = `${clampedY}px`;
                 
                 // 计算速度（距离中心越远，速度越大）
-                const distanceFromCenter = (indicatorCenter - clampedY) / (indicatorCenter - minY);
+                const distanceFromCenter = -clampedY / maxY;
                 const speed = Math.round(distanceFromCenter * 100);
                 
                 // 限制速度范围在-100到100之间
                 const clampedSpeed = Math.max(-100, Math.min(100, speed));
-                
-                // 计算履带旋转角度（视觉效果）
-                const rotationAngle = Math.round((clampedSpeed / 100) * 30);
-                
-                // 更新履带旋转角度
-                trackElement.style.transform = `rotate(${rotationAngle}deg)`;
-                rotationDisplay.textContent = `${rotationAngle}°`;
                 
                 // 更新速度值
                 if (isLeft) {
@@ -506,34 +477,24 @@
             
             function endDrag() {
                 if (isDragging && (dragElement === leftTrack || dragElement === rightTrack)) {
+                    const track = dragElement;
                     isDragging = false;
                     dragElement = null;
                     
                     // 恢复履带视觉效果
-                    const track = dragElement === leftTrack ? leftTrack : rightTrack;
                     track.style.background = 'linear-gradient(to top, rgba(120, 120, 120, 0.05) 0%, rgba(100, 100, 100, 0.15) 30%, rgba(80, 80, 80, 0.25) 70%, rgba(60, 60, 60, 0.1) 100%)';
                     
-                    // 重置指示器位置（回弹到中心）
-                    const indicator = dragElement === leftTrack ? leftIndicator : rightIndicator;
-                    const rotationDisplay = dragElement === leftTrack ? leftRotation : rightRotation;
-                    
-                    indicator.style.transition = 'top 0.5s ease, background-color 0.3s';
-                    indicator.style.top = `${indicatorCenter - 6}px`;
-                    indicator.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
-                    
-                    // 重置履带旋转角度
-                    track.style.transition = 'transform 0.5s ease';
-                    track.style.transform = 'rotate(0deg)';
-                    rotationDisplay.textContent = '0°';
+                    // 重置履带位置（回弹到中心）
+                    track.style.transition = 'top 0.5s ease';
+                    track.style.top = '0px';
                     
                     // 重置过渡效果
                     setTimeout(() => {
-                        indicator.style.transition = 'top 0.1s';
                         track.style.transition = 'all 0.1s ease';
                     }, 500);
                     
                     // 停止发送
-                    if (dragElement === leftTrack) {
+                    if (track === leftTrack) {
                         leftSpeed = 0;
                         leftSpeedDisplay.textContent = '0';
                     } else {
@@ -612,27 +573,22 @@
                 
                 // 旋转模式下只允许左右拖动
                 if (rotateMode) {
-                    newY = controlAreaRect.height / 2 - 60;
+                    newY = controlAreaRect.height / 2 - 30;
                 }
                 
                 // 限制拖动范围
-                newX = Math.max(controlAreaRect.width / 2 - 60 - maxDragDistance, 
-                               Math.min(controlAreaRect.width / 2 - 60 + maxDragDistance, newX));
-                newY = Math.max(controlAreaRect.height / 2 - 60 - maxDragDistance, 
-                               Math.min(controlAreaRect.height / 2 - 60 + maxDragDistance, newY));
+                newX = Math.max(controlAreaRect.width / 2 - 30 - maxDragDistance, 
+                               Math.min(controlAreaRect.width / 2 - 30 + maxDragDistance, newX));
+                newY = Math.max(controlAreaRect.height / 2 - 30 - maxDragDistance, 
+                               Math.min(controlAreaRect.height / 2 - 30 + maxDragDistance, newY));
                 
                 // 更新按钮位置
                 centralBtn.style.left = `${newX}px`;
                 centralBtn.style.top = `${newY}px`;
                 
-                // 显示拖动指示线
-                dragLine.style.display = 'block';
-                dragLine.style.height = `${Math.sqrt(deltaX * deltaX + deltaY * deltaY)}px`;
-                dragLine.style.transform = `translate(-50%, 0) rotate(${Math.atan2(deltaY, deltaX)}rad)`;
-                
                 // 计算相对于中心的偏移量（归一化到-1 ~ 1）
-                const offsetX = (newX - (controlAreaRect.width / 2 - 60)) / maxDragDistance;
-                const offsetY = (newY - (controlAreaRect.height / 2 - 60)) / maxDragDistance * -1; // Y轴反向（上为正）
+                const offsetX = (newX - (controlAreaRect.width / 2 - 30)) / maxDragDistance;
+                const offsetY = (newY - (controlAreaRect.height / 2 - 30)) / maxDragDistance * -1; // Y轴反向（上为正）
                 
                 // 根据模式计算速度
                 if (rotateMode) {
@@ -653,11 +609,16 @@
                     rightSpeed = Math.max(-100, Math.min(100, rightSpeed));
                 }
                 
-                // 更新履带指示器位置
-                updateTrackIndicators();
+                // 计算履带角度（基于速度差）
+                const speedDiff = rightSpeed - leftSpeed;
+                const angle = Math.round((speedDiff / 200) * 30); // 最大30度
                 
-                // 更新履带旋转角度（视觉效果）
-                updateTrackRotations();
+                // 更新履带位置和角度
+                const trackOffsetY = -offsetY * 50; // 履带上下移动距离
+                leftTrack.style.top = `${trackOffsetY}px`;
+                rightTrack.style.top = `${trackOffsetY}px`;
+                leftTrack.style.transform = `rotate(${angle}deg)`;
+                rightTrack.style.transform = `rotate(${angle}deg)`;
                 
                 // 更新显示
                 leftSpeedDisplay.textContent = leftSpeed;
@@ -678,17 +639,18 @@
                         longPressTimer = null;
                     }
                     
-                    // 隐藏拖动指示线
-                    dragLine.style.display = 'none';
-                    
                     // 回弹到中心位置
                     centralBtn.style.transition = 'all 0.5s ease';
-                    centralBtn.style.left = `${controlAreaRect.width / 2 - 60}px`;
-                    centralBtn.style.top = `${controlAreaRect.height / 2 - 60}px`;
+                    centralBtn.style.left = `${controlAreaRect.width / 2 - 30}px`;
+                    centralBtn.style.top = `${controlAreaRect.height / 2 - 30}px`;
                     
-                    // 重置履带指示器位置和角度
-                    resetTrackIndicators();
-                    resetTrackRotations();
+                    // 重置履带位置和角度
+                    leftTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
+                    rightTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
+                    leftTrack.style.top = '0px';
+                    rightTrack.style.top = '0px';
+                    leftTrack.style.transform = 'rotate(0deg)';
+                    rightTrack.style.transform = 'rotate(0deg)';
                     
                     // 如果是旋转模式，退出并恢复样式
                     if (rotateMode) {
@@ -706,6 +668,8 @@
                     // 重置过渡效果
                     setTimeout(() => {
                         centralBtn.style.transition = 'all 0.2s ease';
+                        leftTrack.style.transition = 'all 0.1s ease';
+                        rightTrack.style.transition = 'all 0.1s ease';
                     }, 500);
                 }
             }
