@@ -1,877 +1,1015 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32坦克可视化遥控</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: Arial, sans-serif;
-            touch-action: none; /* 禁用默认触摸行为 */
-        }
-        
-        body {
-            width: 100%;
-            margin: 0;
-            padding: 0;
-            background-color: #f0f0f0;
-            overflow-x: hidden;
-        }
-        
-        .container {
-            background: white;
-            padding: 15px;
-            border-radius: 0;
-            box-shadow: none;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-        }
-        
-        .ble-status {
-            text-align: center;
-            margin: 20px 0;
-            padding: 10px;
-            border-radius: 8px;
-            font-weight: bold;
-        }
-        
-        .disconnected {
-            background-color: #ffeeee;
-            color: #dc3545;
-        }
-        
-        .connected {
-            background-color: #e8f5e9;
-            color: #28a745;
-        }
-        
-        #connectBtn {
-            display: block;
-            margin: 0 auto 20px;
-            padding: 15px 30px;
-            font-size: 18px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        
-        #connectBtn:hover {
-            background-color: #0056b3;
-        }
-        
-        /* 核心控制区域 */
-        .control-area {
-            position: relative;
-            width: 100%;
-            height: 60vh;
-            margin: 15px 0;
-            border: 2px solid #ddd;
-            border-radius: 10px;
-            background-color: #f8f9fa;
-            overflow: hidden;
-        }
-        
-        /* 履带样式 - 向上伸展 */
-        .track {
-            position: absolute;
-            bottom: 0;
-            width: 20px;
-            height: 25%;
-            background: linear-gradient(
-                to top,
-                rgba(120, 120, 120, 0.05) 0%,
-                rgba(100, 100, 100, 0.15) 30%,
-                rgba(80, 80, 80, 0.25) 70%,
-                rgba(60, 60, 60, 0.1) 100%
-            );
-            border-radius: 5px;
-            cursor: grab;
-            transition: all 0.1s ease;
-            transform-origin: bottom center;
-        }
-        
-        .track:active {
-            cursor: grabbing;
-        }
-        
-        .track-left {
-            left: calc(50% - 30px);
-        }
-        
-        .track-right {
-            right: calc(50% - 30px);
-        }
-        
-        /* 履带刻度和指示 */
-        .track::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: repeating-linear-gradient(
-                to top,
-                transparent 0px,
-                transparent 15px,
-                rgba(80, 80, 80, 0.2) 15px,
-                rgba(80, 80, 80, 0.2) 20px
-            );
-        }
-        
-        .track-center-line {
-            position: absolute;
-            top: 50%;
-            left: 0;
-            width: 100%;
-            height: 2px;
-            background-color: rgba(100, 100, 100, 0.5);
-            transform: translateY(-50%);
-        }
-        
-        /* 履带指示器（显示当前速度位置） */
-        .track-indicator {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            height: 12px;
-            background-color: rgba(255, 0, 0, 0.6);
-            border-radius: 6px;
-            z-index: 2;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            transition: top 0.1s;
-        }
-        
-        /* 履带速度标签 */
-        .track-label {
-            position: absolute;
-            top: 10px;
-            left: 0;
-            width: 100%;
-            text-align: center;
-            font-weight: bold;
-            color: #333;
-            z-index: 3;
-        }
-        
-        /* 中央控制按钮 */
-        .central-control {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(180, 180, 180, 0.2) 0%, rgba(150, 150, 150, 0.1) 70%);
-            transform: translate(-50%, -50%);
-            cursor: grab;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            color: #555;
-            border: 2px dashed rgba(100, 100, 100, 0.4);
-            z-index: 10;
-            backdrop-filter: blur(2px);
-            box-shadow: 
-                inset 0 0 10px rgba(255, 255, 255, 0.3),
-                0 3px 10px rgba(0, 0, 0, 0.1);
-        }
-        
-        .central-control:active {
-            cursor: grabbing;
-        }
-        
-        /* 旋转模式样式 */
-        .central-control.rotate-mode {
-            background: radial-gradient(circle, rgba(0, 123, 255, 0.3) 0%, rgba(0, 86, 179, 0.15) 70%);
-            border: 2px solid #007bff;
-            color: #007bff;
-            box-shadow: 
-                inset 0 0 20px rgba(0, 123, 255, 0.2),
-                0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-        
-        /* 中央按钮拖动指示线 */
-        .central-drag-line {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 2px;
-            height: 0;
-            background-color: rgba(0, 123, 255, 0.5);
-            transform-origin: top center;
-            z-index: 5;
-            display: none;
-        }
-        
-        /* 速度显示面板 */
-        .speed-panel {
-            display: flex;
-            justify-content: space-around;
-            margin: 30px 0;
-            padding: 20px;
-            background-color: #f1f1f1;
-            border-radius: 10px;
-        }
-        
-        .speed-display {
-            text-align: center;
-            font-size: 20px;
-        }
-        
-        .speed-value {
-            font-size: 28px;
-            font-weight: bold;
-            color: #007bff;
-            margin: 10px 0;
-        }
-        
-        /* 停止按钮 */
-        #stopBtn {
-            display: block;
-            margin: 0 auto;
-            padding: 15px 40px;
-            font-size: 20px;
-            background-color: #dc3545;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        
-        #stopBtn:hover {
-            background-color: #c82333;
-        }
-        
-        /* 模式提示 */
-        .mode-hint {
-            text-align: center;
-            margin: 15px 0;
-            font-size: 16px;
-            color: #666;
-            line-height: 1.6;
-        }
-        
-        /* 履带角度指示 */
-        .track-rotation {
-            position: absolute;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 100%;
-            height: 30px;
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-        }
-        
-        /* 响应式调整 */
-        @media (max-width: 768px) {
-            .track-left {
-                left: 80px;
-            }
-            
-            .track-right {
-                right: 80px;
-            }
-            
-            .central-control {
-                width: 100px;
-                height: 100px;
-                font-size: 18px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>ESP32坦克可视化遥控</h1>
-        
-        <button id="connectBtn">连接BLE设备</button>
-        <div id="bleStatus" class="ble-status disconnected">未连接BLE设备</div>
-        
-        <div class="mode-hint">
-            🔹 点击单条履带上下拖动：单独控制左右履带速度（向上前进，向下后退）<br>
-            🔹 点击并拖动中央按钮：同时控制双履带（XY轴控制转向和速度）<br>
-            🔹 长按中央按钮1秒：切换原地旋转模式（蓝色状态，仅左右拖动有效）
-        </div>
-        
-        <!-- 核心可视化控制区域 -->
-        <div class="control-area" id="controlArea">
-            <!-- 左履带 -->
-            <div class="track track-left" id="leftTrack">
-                <div class="track-center-line"></div>
-            </div>
-            
-            <!-- 右履带 -->
-            <div class="track track-right" id="rightTrack">
-                <div class="track-center-line"></div>
-            </div>
-            
-            <!-- 中央控制按钮 -->
-            <div class="central-control" id="centralBtn">
-                控制
-            </div>
-            
-            <!-- 中央按钮拖动指示线 -->
-            <div class="central-drag-line" id="dragLine"></div>
-        </div>
-        
-        <!-- 速度显示面板 -->
-        <div class="speed-panel">
-            <div class="speed-display">
-                <div>左履带速度</div>
-                <div class="speed-value" id="leftSpeed">0</div>
-            </div>
-            <div class="speed-display">
-                <div>右履带速度</div>
-                <div class="speed-value" id="rightSpeed">0</div>
-            </div>
-        </div>
-        
-        <button id="stopBtn">紧急停止</button>
-    </div>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>坦克BLE遥控系统</title>
 
-    <script>
-        // BLE相关变量
-        let bluetoothDevice = null;
-        let characteristic = null;
-        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-        
-        // 控制状态变量
-        let leftSpeed = 0;    // 左履带速度 (-100 ~ 100)
-        let rightSpeed = 0;   // 右履带速度 (-100 ~ 100)
-        let rotateMode = false; // 是否为原地旋转模式
-        let longPressTimer = null; // 长按计时器
-        let isDragging = false;   // 是否正在拖动
-        let dragElement = null;   // 当前拖动的元素
-        let hasMoved = false;     // 标记是否有拖动行为
-        
-        // DOM元素
-        const connectBtn = document.getElementById('connectBtn');
-        const bleStatus = document.getElementById('bleStatus');
-        const controlArea = document.getElementById('controlArea');
-        const leftTrack = document.getElementById('leftTrack');
-        const rightTrack = document.getElementById('rightTrack');
-        const centralBtn = document.getElementById('centralBtn');
-        const leftSpeedDisplay = document.getElementById('leftSpeed');
-        const rightSpeedDisplay = document.getElementById('rightSpeed');
-        const stopBtn = document.getElementById('stopBtn');
-        
-        // 控制区域和元素尺寸
-        let controlAreaRect = controlArea.getBoundingClientRect();
-        const trackHeight = controlAreaRect.height;
-        const centerY = trackHeight / 2;
-        const maxDragDistance = 200; // 最大拖动距离（对应速度100）
-        
-        // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            // BLE连接/断开
-            connectBtn.addEventListener('click', connectBLE);
-            
-            // 紧急停止
-            stopBtn.addEventListener('click', stopAll);
-            
-            // 初始化履带拖动事件
-            initTrackDrag(leftTrack, true);
-            initTrackDrag(rightTrack, false);
-            
-            // 初始化中央按钮事件
-            initCentralBtnDrag();
-            
-            // 监听窗口大小变化，更新控制区域尺寸
-            window.addEventListener('resize', updateControlAreaSize);
-        });
-        
-        // 更新控制区域尺寸
-        function updateControlAreaSize() {
-            controlAreaRect = controlArea.getBoundingClientRect();
+<style>
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont;
+  background: #f5f5f5;
+  user-select: none;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.1);
+}
+
+header button {
+  border: none;
+  background: #eee;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color 0.05s linear;
+}
+header button:active, header button.tap-active {
+  background: #ff4444 !important;
+  color: #ffffff !important;
+}
+header button#bleConnectBtn.blink {
+  animation: blink 1s step-end infinite;
+}
+header button#bleConnectBtn.connected {
+  background: #2196f3 !important;
+  color: #ffffff !important;
+}
+@keyframes blink {
+  0% { background: #eee; color: #000; }
+  50% { background: #ff4444; color: #ffffff; }
+  100% { background: #eee; color: #000; }
+}
+
+.label-btn {
+  width: 65px;
+  height: 32px;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color 0.05s linear;
+}
+.label-btn:active, .label-btn.tap-active {
+  background: #ff4444 !important;
+  color: #ffffff !important;
+}
+
+/* 底部控制栏样式 */
+.control-bar {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  max-width: 600px;
+  margin: 5px auto 1px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.speed-display {
+  width: 80px;
+  height: 40px;
+  background: #fff;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.speed-label {
+  font-size: 10px;
+  color: #666;
+}
+
+.speed-value {
+  font-size: 16px;
+  font-weight: bold;
+  color: #3b82f6;
+}
+
+.emergency-stop {
+  flex: 1;
+  padding: 12px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: none;
+  background: #ef4444;
+  color: white;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.emergency-stop:active, .emergency-stop.tap-active {
+  background: #b91c1c !important;
+}
+
+main {
+  position: relative;
+  padding: 10px;
+  max-width: 600px;
+  margin: 0 auto;
+  /* 核心修改：原高度 calc(100vw * 0.9) 增加50% → calc(100vw * 1.35) */
+  height: calc(100vw * 1.35);
+  /* 原max-height 540px 增加50% → 810px */
+  max-height: 810px;
+  /* 原min-height 350px 增加50% → 525px */
+  min-height: 525px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 100%);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.arm-bg {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.2;
+  border-radius: 8px;
+  margin: 0 auto;
+  background: transparent;
+}
+
+/* 履带滑块组样式 - 竖向布局 */
+.slider-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.9);
+  padding: 12px 8px;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  z-index: 10;
+  height: 80%;
+  width: 40px;
+}
+
+/* 竖向滑块容器 - 核心修复 */
+.vertical-slider-container {
+  position: relative;
+  width: 8px;
+  height: 100%;
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+/* 自定义竖向滑块 - 替代原生range */
+.vertical-slider {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.1s ease;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vertical-slider:active {
+  background: #ff4444;
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+/* 速度百分比显示 */
+.speed-percent {
+  font-size: 11px;
+  color: #666;
+  min-height: 15px;
+  text-align: center;
+}
+
+#configModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+#configBox {
+  background: white;
+  padding: 20px;
+  width: 85%;
+  max-width: 400px;
+  border-radius: 12px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#configBox label {
+  font-size: 14px;
+  display: block;
+  margin-top: 12px;
+  color: #666;
+}
+
+#configBox input, #configBox select {
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.modal-btns {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.modal-btns button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background-color 0.05s linear;
+}
+
+.btn-save { background: #3b82f6; color: white; }
+.btn-close { background: #eee; color: #333; }
+.btn-save:active, .btn-save.tap-active,
+.btn-close:active, .btn-close.tap-active {
+  background: #ff4444 !important;
+  color: #ffffff !important;
+}
+
+#statusInfo {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  margin-top: 5px;
+  height: 15px;
+  width: 100%;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <button onclick="openConfig()">⚙ 配置</button>
+  <div style="font-weight: bold;">坦克BLE遥控系统</div>
+  <button id="bleConnectBtn" onclick="connectBLE()">🔵 连接蓝牙</button>
+</header>
+
+<div id="statusInfo">未连接蓝牙</div>
+
+<main>
+  <img class="arm-bg" src="tank.jpg" onerror="handleImageError(this)" alt="坦克背景" />
+  
+  <!-- 左履带竖向滑块 - 使用自定义滑块 -->
+  <div class="slider-group left-track">
+    <button class="label-btn" id="R1">前进</button>
+    <span class="speed-percent" id="leftSpeedPercent">0%</span>
+    <div class="vertical-slider-container" data-slider-id="1">
+      <div class="vertical-slider" id="slider1"></div>
+    </div>
+    <button class="label-btn" id="L1">后退</button>
+  </div>
+  
+  <!-- 右履带竖向滑块 - 使用自定义滑块 -->
+  <div class="slider-group right-track">
+    <button class="label-btn" id="R2">前进</button>
+    <span class="speed-percent" id="rightSpeedPercent">0%</span>
+    <div class="vertical-slider-container" data-slider-id="2">
+      <div class="vertical-slider" id="slider2"></div>
+    </div>
+    <button class="label-btn" id="L2">后退</button>
+  </div>
+</main>
+
+<!-- 底部速度显示和紧急停止栏 -->
+<div class="control-bar">
+  <div class="speed-display">
+    <div class="speed-label">左履带</div>
+    <div class="speed-value" id="leftSpeed">0%</div>
+  </div>
+  
+  <button class="emergency-stop" id="EMERGENCY_STOP">🚨 紧急停止</button>
+  
+  <div class="speed-display">
+    <div class="speed-label">右履带</div>
+    <div class="speed-value" id="rightSpeed">0%</div>
+  </div>
+</div>
+
+<div id="configModal">
+  <div id="configBox">
+    <h3 style="margin:0">坦克控制配置</h3>
+    <label>选择控制按钮</label>
+    <select id="cfgId" onchange="loadCurrentConfig()">
+      <optgroup label="履带控制按钮">
+        <option value="L1">左履带-后退</option><option value="R1">左履带-前进</option>
+        <option value="L2">右履带-后退</option><option value="R2">右履带-前进</option>
+      </optgroup>
+      <optgroup label="功能按钮">
+        <option value="EMERGENCY_STOP">紧急停止按钮</option>
+      </optgroup>
+    </select>
+    <label>按钮显示名称</label>
+    <input id="cfgName">
+    <label>按下命令 (格式: #ID,SPEED! 例如 #1,80! 表示左履带80%速度)</label>
+    <input id="cfgPress">
+    <label>抬起命令 (可选，停止命令: #ID,0!)</label>
+    <input id="cfgRelease">
+    <div class="modal-btns">
+      <button class="btn-save" onclick="saveConfig()">保存</button>
+      <button class="btn-close" onclick="closeConfig()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// 全局变量明确绑定到window，避免作用域冲突
+window.bleChar = null;
+window.bleDevice = null; 
+let sliderTimers = {};
+let sliderHeld = {};
+let sliderActiveBtn = {};
+const bleBtn = document.getElementById('bleConnectBtn');
+let currentOperatingJoint = null;
+let commandQueue = [];
+let isProcessingQueue = false;
+const QUEUE_LENGTH_THRESHOLD = 3;
+const CMD_TIMEOUT = 2000;
+let cmdTimeoutTimers = {};
+
+// 滑块状态变量
+let activeSlider = null;
+let sliderStartY = 0;
+let sliderStartTop = 50; // 初始位置（百分比）
+let sliderContainerHeight = 0;
+
+// 速度显示元素
+const leftSpeedDisplay = document.getElementById('leftSpeed');
+const rightSpeedDisplay = document.getElementById('rightSpeed');
+const leftSpeedPercent = document.getElementById('leftSpeedPercent');
+const rightSpeedPercent = document.getElementById('rightSpeedPercent');
+
+document.addEventListener('DOMContentLoaded', function() {
+  const allButtons = document.querySelectorAll('button');
+  allButtons.forEach(btn => {
+    btn.addEventListener('touchstart', function() {
+      this.classList.add('tap-active');
+    }, { passive: true });
+    btn.addEventListener('touchend', function() {
+      this.classList.remove('tap-active');
+    });
+    btn.addEventListener('touchmove', function(e) {
+      const rect = this.getBoundingClientRect();
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+        this.classList.remove('tap-active');
+      }
+    }, { passive: true });
+    btn.addEventListener('touchcancel', function() {
+      this.classList.remove('tap-active');
+    });
+    btn.addEventListener('mousedown', function() {
+      this.classList.add('tap-active');
+    });
+    btn.addEventListener('mouseup', function() {
+      this.classList.remove('tap-active');
+    });
+    btn.addEventListener('mouseleave', function() {
+      this.classList.remove('tap-active');
+    });
+    btn.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+    });
+  });
+  
+  // 初始化自定义竖向滑块
+  initVerticalSliders();
+  
+  const mainContainer = document.querySelector('main');
+  if (mainContainer) {
+    mainContainer.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+    });
+  }
+});
+
+// 初始化自定义竖向滑块 - 核心修复
+function initVerticalSliders() {
+  const sliders = document.querySelectorAll('.vertical-slider');
+  
+  sliders.forEach(slider => {
+    const sliderId = slider.id.replace('slider', '');
+    const container = slider.parentElement;
+    
+    // 初始化滑块位置（中间）
+    updateSliderPosition(slider, 50);
+    
+    // 鼠标事件
+    slider.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      startSliderDrag(e, sliderId, slider, container);
+    });
+    
+    // 触摸事件（移动端）
+    slider.addEventListener('touchstart', function(e) {
+      e.preventDefault();
+      startSliderDrag(e, sliderId, slider, container, true);
+    }, { passive: false });
+    
+    // 全局鼠标/触摸结束事件
+    document.addEventListener('mouseup', endSliderDrag);
+    document.addEventListener('touchend', endSliderDrag);
+    document.addEventListener('touchcancel', endSliderDrag);
+    document.addEventListener('mousemove', dragSlider);
+    document.addEventListener('touchmove', dragSlider, { passive: false });
+  });
+}
+
+// 开始拖动滑块
+function startSliderDrag(e, sliderId, slider, container, isTouch = false) {
+  // 操作锁定检查
+  if (currentOperatingJoint !== null && currentOperatingJoint !== parseInt(sliderId)) {
+    console.log(`操作锁定：当前正在操作履带${currentOperatingJoint}，请完成后再操作其他履带`);
+    return;
+  }
+  
+  currentOperatingJoint = parseInt(sliderId);
+  activeSlider = {
+    id: sliderId,
+    element: slider,
+    container: container,
+    containerRect: container.getBoundingClientRect(),
+    startY: isTouch ? e.touches[0].clientY : e.clientY,
+    startPercent: getSliderPercent(slider, container)
+  };
+  
+  sliderHeld[sliderId] = true;
+  sliderContainerHeight = container.clientHeight;
+  
+  // 初始计算速度
+  updateSliderSpeed(sliderId, activeSlider.startPercent);
+}
+
+// 拖动滑块
+function dragSlider(e) {
+  if (!activeSlider) return;
+  
+  e.preventDefault();
+  
+  const isTouch = e.type === 'touchmove';
+  const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+  const deltaY = activeSlider.startY - clientY;
+  const percentDelta = (deltaY / sliderContainerHeight) * 100;
+  let newPercent = activeSlider.startPercent + percentDelta;
+  
+  // 限制范围 0-100%
+  newPercent = Math.max(0, Math.min(100, newPercent));
+  
+  // 更新滑块位置
+  updateSliderPosition(activeSlider.element, newPercent);
+  
+  // 更新速度和发送指令
+  updateSliderSpeed(activeSlider.id, newPercent);
+}
+
+// 结束拖动滑块
+function endSliderDrag() {
+  if (!activeSlider) return;
+  
+  const sliderId = activeSlider.id;
+  sliderHeld[sliderId] = false;
+  
+  // 清除计时器
+  if (sliderTimers[sliderId]) {
+    clearInterval(sliderTimers[sliderId]);
+    delete sliderTimers[sliderId];
+  }
+  
+  // 回弹到中间位置（50%）
+  updateSliderPosition(activeSlider.element, 50);
+  updateSliderSpeed(sliderId, 50);
+  
+  // 发送停止指令
+  sendSliderReleaseCmd(sliderId);
+  delete sliderActiveBtn[sliderId];
+  
+  // 释放操作锁定
+  if (currentOperatingJoint === parseInt(sliderId)) {
+    currentOperatingJoint = null;
+    console.log(`操作锁定已释放，现在可以操作其他履带`);
+  }
+  
+  activeSlider = null;
+}
+
+// 更新滑块位置（百分比）
+function updateSliderPosition(slider, percent) {
+  // 50% = 中间，0% = 顶部，100% = 底部
+  const topPercent = 100 - percent;
+  slider.style.top = `${topPercent}%`;
+}
+
+// 获取滑块当前位置百分比
+function getSliderPercent(slider, container) {
+  const top = parseFloat(slider.style.top) || 50;
+  return 100 - top;
+}
+
+// 更新滑块对应的速度和指令
+function updateSliderSpeed(sliderId, percent) {
+  const center = 50;
+  const offset = percent - center;
+  const speed = Math.round((offset / center) * 100);
+  
+  // 更新速度显示
+  const speedPercent = Math.abs(speed) + '%';
+  const direction = speed > 0 ? '前进' : speed < 0 ? '后退' : '停止';
+  
+  if (sliderId == 1) {
+    leftSpeedDisplay.textContent = speedPercent;
+    leftSpeedPercent.textContent = speedPercent;
+    leftSpeedDisplay.style.color = speed !== 0 ? (speed > 0 ? '#16a34a' : '#ef4444') : '#666';
+  } else if (sliderId == 2) {
+    rightSpeedDisplay.textContent = speedPercent;
+    rightSpeedPercent.textContent = speedPercent;
+    rightSpeedDisplay.style.color = speed !== 0 ? (speed > 0 ? '#16a34a' : '#ef4444') : '#666';
+  }
+  
+  const status = document.getElementById('statusInfo');
+  if (speed !== 0) {
+    status.innerText = `履带${sliderId}：${direction} ${speedPercent}`;
+    status.style.color = "#3b82f6";
+    
+    // 确定方向按钮
+    const leftBtnId = `L${sliderId}`;
+    const rightBtnId = `R${sliderId}`;
+    const targetBtnId = offset < 0 ? leftBtnId : rightBtnId;
+    sliderActiveBtn[sliderId] = targetBtnId;
+    
+    // 获取指令并发送
+    const originalCmd = buttonConfigs[targetBtnId]?.press;
+    if (!originalCmd || !window.bleChar) return;
+    
+    const speedCmd = calculateSpeedCmd(originalCmd, speed);
+    if (!speedCmd) return;
+    
+    // 检查队列长度
+    if (commandQueue.length >= QUEUE_LENGTH_THRESHOLD) {
+      console.warn(`指令队列已满（${commandQueue.length}条），拒绝履带操作指令：${speedCmd}`);
+      return;
+    }
+    
+    // 立即发送一次指令
+    send(speedCmd);
+    
+    // 设置定时发送
+    const interval = 200;
+    if (sliderTimers[sliderId]) clearInterval(sliderTimers[sliderId]);
+    
+    sliderTimers[sliderId] = setInterval(() => {
+      if (sliderHeld[sliderId] && commandQueue.length < QUEUE_LENGTH_THRESHOLD) {
+        send(speedCmd);
+      }
+    }, interval);
+    
+  } else {
+    // 速度为0的处理
+    if (sliderTimers[sliderId]) {
+      clearInterval(sliderTimers[sliderId]);
+      delete sliderTimers[sliderId];
+    }
+    
+    sendSliderReleaseCmd(sliderId);
+    delete sliderActiveBtn[sliderId];
+    
+    if (currentOperatingJoint === parseInt(sliderId)) {
+      currentOperatingJoint = null;
+    }
+    
+    if (parseInt(leftSpeedDisplay.textContent) === 0 && parseInt(rightSpeedDisplay.textContent) === 0) {
+      status.innerText = "坦克已停止";
+      status.style.color = "#666";
+    }
+  }
+}
+
+function handleImageError(img) {
+  console.log('图片加载失败，使用备用布局');
+}
+
+// 坦克控制默认配置
+const defaultConfigs = {
+  L1: { name: "后退", press: "#1,-80!", release: "#1,0!" }, // 左履带后退80%
+  R1: { name: "前进", press: "#1,80!", release: "#1,0!" },  // 左履带前进80%
+  L2: { name: "后退", press: "#2,-80!", release: "#2,0!" }, // 右履带后退80%
+  R2: { name: "前进", press: "#2,80!", release: "#2,0!" },  // 右履带前进80%
+  EMERGENCY_STOP: { name: "紧急停止", press: "#0,0!", release: "" } // 全部停止
+};
+
+let buttonConfigs = JSON.parse(localStorage.getItem("tankBtnCfg")) || defaultConfigs;
+
+function initButtons() {
+  Object.keys(buttonConfigs).forEach(btnId => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const cfg = buttonConfigs[btnId];
+    btn.innerText = cfg.name || btnId;
+    btn.removeEventListener('mousedown', handleBtnPress);
+    btn.removeEventListener('mouseup', handleBtnRelease);
+    btn.removeEventListener('touchstart', handleBtnPress);
+    btn.removeEventListener('touchend', handleBtnRelease);
+    btn.addEventListener('mousedown', handleBtnPress);
+    btn.addEventListener('mouseup', handleBtnRelease);
+    btn.addEventListener('touchstart', handleBtnPress, { passive: false });
+    btn.addEventListener('touchend', handleBtnRelease, { passive: false });
+  });
+}
+
+function handleBtnPress(e) {
+  if (e.cancelable) e.preventDefault();
+  const btnId = e.target.id;
+  const cfg = buttonConfigs[btnId];
+  if (cfg && cfg.press) send(cfg.press);
+  
+  // 紧急停止按钮特殊处理
+  if (btnId === 'EMERGENCY_STOP') {
+    // 回弹所有滑块
+    updateSliderPosition(document.getElementById('slider1'), 50);
+    updateSliderPosition(document.getElementById('slider2'), 50);
+    updateSliderSpeed(1, 50);
+    updateSliderSpeed(2, 50);
+  }
+}
+
+function handleBtnRelease(e) {
+  if (e.cancelable) e.preventDefault();
+  const btnId = e.target.id;
+  const cfg = buttonConfigs[btnId];
+  
+  if (cfg && cfg.release) {
+    send(cfg.release);
+    console.log(`【按钮${btnId}】发送抬起指令: ${cfg.release}`);
+  }
+}
+
+function sendSliderReleaseCmd(sliderId) {
+  const activeBtnId = sliderActiveBtn[sliderId];
+  if (!activeBtnId) return;
+  
+  const cfg = buttonConfigs[activeBtnId];
+  if (cfg && cfg.release) {
+    send(cfg.release);
+    console.log(`【履带${sliderId}】发送停止指令: ${cfg.release}`);
+  }
+}
+
+// 根据滑块位置计算速度指令
+function calculateSpeedCmd(originalCmd, speed) {
+  // 匹配原始指令格式 #ID,SPEED!
+  const cmdMatch = originalCmd.match(/(#\d+),([+-]?\d+)!/);
+  if (!cmdMatch) return null;
+  
+  const [, trackId, baseSpeed] = cmdMatch;
+  // 基于基础速度和当前滑块百分比计算实际速度
+  const baseValue = parseInt(baseSpeed);
+  const direction = baseValue > 0 ? 1 : -1;
+  const actualSpeed = direction * Math.abs(speed);
+  
+  return `${trackId},${actualSpeed}!`;
+}
+
+function openConfig() {
+  document.getElementById('configModal').style.display = "flex";
+  loadCurrentConfig();
+}
+
+function closeConfig() {
+  document.getElementById('configModal').style.display = "none";
+}
+
+function loadCurrentConfig() {
+  const id = document.getElementById('cfgId').value;
+  const cfg = buttonConfigs[id] || { name: "", press: "", release: "" };
+  document.getElementById('cfgName').value = cfg.name || "";
+  document.getElementById('cfgPress').value = cfg.press || "";
+  document.getElementById('cfgRelease').value = cfg.release || "";
+}
+
+function saveConfig() {
+  const id = document.getElementById('cfgId').value;
+  buttonConfigs[id] = {
+    name: document.getElementById('cfgName').value.trim(),
+    press: document.getElementById('cfgPress').value.trim(),
+    release: document.getElementById('cfgRelease').value.trim()
+  };
+  localStorage.setItem("tankBtnCfg", JSON.stringify(buttonConfigs));
+  initButtons();
+  closeConfig();
+}
+
+// 蓝牙连接函数（保持原有逻辑）
+async function connectBLE() {
+  const status = document.getElementById('statusInfo');
+  bleBtn.classList.remove('connected');
+  bleBtn.classList.add('blink');
+  bleBtn.disabled = true;
+
+  window.bleChar = null;
+  window.bleDevice = null;
+  Object.keys(cmdTimeoutTimers).forEach(id => clearTimeout(cmdTimeoutTimers[id]));
+
+  const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+  const CHAR_UUID = '0000ffe2-0000-1000-8000-00805f9b34fb';
+  const MAX_RETRY = 2;
+  let retryCount = 0;
+
+  try {
+    status.innerText = "正在搜索蓝牙设备...";
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    });
+    window.bleDevice = device;
+    console.log("【已选择设备】:", device.name, device.id);
+
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    while (retryCount <= MAX_RETRY) {
+      try {
+        status.innerText = `第${retryCount+1}次连接GATT服务器...`;
+        const server = await device.gatt.connect();
+        console.log("【GATT连接成功】:", server.connected);
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(CHAR_UUID);
+
+        if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+          throw new Error("特征值不支持写入，请检查UUID是否正确");
         }
-        
-        // 初始化履带拖动
-        function initTrackDrag(trackElement, isLeft) {
-            let startY = 0;
-            let startTrackY = 0;
-            
-            // 鼠标/触摸开始
-            trackElement.addEventListener('mousedown', startDrag);
-            trackElement.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                startDrag(e.touches[0]);
-            });
-            
-            // 鼠标/触摸移动
-            document.addEventListener('mousemove', drag);
-            document.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                drag(e.touches[0]);
-            });
-            
-            // 鼠标/触摸结束
-            document.addEventListener('mouseup', endDrag);
-            document.addEventListener('touchend', endDrag);
-            
-            function startDrag(e) {
-                if (isDragging) return;
-                isDragging = true;
-                dragElement = trackElement;
-                
-                startY = e.clientY;
-                startTrackY = parseFloat(getComputedStyle(trackElement).top) || 0;
-                
-                // 添加拖动视觉效果
-                trackElement.style.background = 'linear-gradient(to top, rgba(120, 120, 120, 0.15) 0%, rgba(100, 100, 100, 0.25) 30%, rgba(80, 80, 80, 0.35) 70%, rgba(60, 60, 60, 0.2) 100%)';
-            }
-            
-            function drag(e) {
-                if (!isDragging || dragElement !== trackElement) return;
-                
-                // 计算拖动距离
-                const deltaY = e.clientY - startY;
-                const newY = startTrackY + deltaY;
-                
-                // 限制拖动范围
-                const minY = -50;
-                const maxY = 50;
-                const clampedY = Math.max(minY, Math.min(maxY, newY));
-                
-                // 更新履带位置
-                trackElement.style.top = `${clampedY}px`;
-                
-                // 计算速度（距离中心越远，速度越大）
-                const distanceFromCenter = -clampedY / maxY;
-                const speed = Math.round(distanceFromCenter * 100);
-                
-                // 限制速度范围在-100到100之间
-                const clampedSpeed = Math.max(-100, Math.min(100, speed));
-                
-                // 更新速度值
-                if (isLeft) {
-                    leftSpeed = clampedSpeed;
-                    leftSpeedDisplay.textContent = leftSpeed;
-                } else {
-                    rightSpeed = clampedSpeed;
-                    rightSpeedDisplay.textContent = rightSpeed;
-                }
-                
-                // 发送控制指令
-                sendData(leftSpeed, rightSpeed);
-            }
-            
-            function endDrag() {
-                if (isDragging && (dragElement === leftTrack || dragElement === rightTrack)) {
-                    const track = dragElement;
-                    isDragging = false;
-                    dragElement = null;
-                    
-                    // 恢复履带视觉效果
-                    track.style.background = 'linear-gradient(to top, rgba(120, 120, 120, 0.05) 0%, rgba(100, 100, 100, 0.15) 30%, rgba(80, 80, 80, 0.25) 70%, rgba(60, 60, 60, 0.1) 100%)';
-                    
-                    // 重置履带位置（回弹到中心）
-                    track.style.transition = 'top 0.5s ease';
-                    track.style.top = '0px';
-                    
-                    // 重置过渡效果
-                    setTimeout(() => {
-                        track.style.transition = 'all 0.1s ease';
-                    }, 500);
-                    
-                    // 停止发送
-                    if (track === leftTrack) {
-                        leftSpeed = 0;
-                        leftSpeedDisplay.textContent = '0';
-                    } else {
-                        rightSpeed = 0;
-                        rightSpeedDisplay.textContent = '0';
-                    }
-                    sendData(leftSpeed, rightSpeed);
-                }
-            }
+
+        characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
+
+        window.bleChar = characteristic;
+        bleBtn.classList.remove('blink');
+        bleBtn.classList.add('connected');
+        bleBtn.innerText = "🔵 已连蓝牙";
+        status.innerText = `已连接: ${device.name}（重试${retryCount}次）`;
+        status.style.color = "green";
+        console.log("【最终连接成功】特征值UUID:", characteristic.uuid);
+        return;
+
+      } catch (retryErr) {
+        retryCount++;
+        console.warn(`第${retryCount}次连接失败:`, retryErr.message);
+        if (retryCount > MAX_RETRY) throw retryErr;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+  } catch (e) {
+    bleBtn.classList.remove('blink');
+    bleBtn.innerText = "🔵 连接蓝牙";
+    if (e.message.includes("GATT Server is disconnected")) {
+      status.innerText = "连接失败：蓝牙已断开，请重启电脑蓝牙/清除浏览器缓存";
+      status.style.color = "red";
+    } else if (e.message.includes("User cancelled")) {
+      status.innerText = "连接失败：未选择蓝牙设备";
+      status.style.color = "orange";
+    } else {
+      status.innerText = `连接失败: ${e.message.substring(0, 20)}...`;
+      status.style.color = "red";
+    }
+    console.error("蓝牙连接最终失败:", e);
+  } finally {
+    bleBtn.disabled = false;
+  }
+}
+
+function onDisconnected() {
+  window.bleChar = null;
+  window.bleDevice = null;
+  bleBtn.classList.remove('blink', 'connected');
+  bleBtn.innerText = "🔵 连接蓝牙";
+  const status = document.getElementById('statusInfo');
+  status.innerText = "蓝牙已断开：请检查设备距离/电脑蓝牙状态";
+  status.style.color = "orange";
+  Object.keys(cmdTimeoutTimers).forEach(id => clearTimeout(cmdTimeoutTimers[id]));
+}
+
+function handleBLEData(event) {
+  const value = event.target.value;
+  const decoder = new TextDecoder('utf-8');
+  const response = decoder.decode(value);
+  console.log("【接收】蓝牙返回数据：", response);
+
+  const status = document.getElementById('statusInfo');
+  // 解析坦克速度状态（示例：#SPEED:1,80! 表示左履带80%速度）
+  if (response.includes("#SPEED:")) {
+    const speedMatch = response.match(/#SPEED:(\d+),([+-]?\d+)!/);
+    if (speedMatch) {
+      const trackId = speedMatch[1];
+      const speed = speedMatch[2];
+      const percent = 50 + (parseInt(speed) / 2);
+      updateSliderPosition(document.getElementById(`slider${trackId}`), percent);
+      updateSliderSpeed(trackId, percent);
+    }
+  }
+  
+  // 解析电池状态
+  if (response.includes("#BAT:")) {
+    const batMatch = response.match(/#BAT:(\d+)%!/);
+    if (batMatch) {
+      status.innerText = `电池电量：${batMatch[1]}%`;
+      status.style.color = parseInt(batMatch[1]) < 20 ? "red" : "blue";
+    }
+  }
+}
+
+async function send(cmd) {
+  const status = document.getElementById('statusInfo');
+  const bleChar = window.bleChar;
+  const bleDevice = window.bleDevice;
+  
+  if (!cmd) {
+    console.warn("空指令，跳过发送");
+    return;
+  }
+  
+  if (!bleChar || !bleDevice || !bleDevice.gatt.connected) {
+    status.innerText = "蓝牙未连接，无法发送指令";
+    status.style.color = "red";
+    console.error("蓝牙未连接：bleChar=", bleChar, "bleDevice.connected=", bleDevice?.gatt?.connected);
+    return;
+  }
+
+  const isStopCmd = cmd.includes(",0!") || cmd === "#0,0!";
+  if (commandQueue.length >= QUEUE_LENGTH_THRESHOLD && !isStopCmd) {
+    console.warn(`指令队列已满（${commandQueue.length}条），拒绝新指令：${cmd}`);
+    status.innerText = `指令队列已满，请稍后再试`;
+    status.style.color = "orange";
+    return;
+  }
+
+  commandQueue.push(cmd);
+  console.log(`指令已加入队列，当前队列长度：${commandQueue.length}`);
+  processCommandQueue();
+}
+
+async function processCommandQueue() {
+  const status = document.getElementById('statusInfo');
+  const bleChar = window.bleChar;
+  const bleDevice = window.bleDevice;
+  
+  if (isProcessingQueue || commandQueue.length === 0) return;
+  
+  isProcessingQueue = true;
+  
+  while (commandQueue.length > 0) {
+    const cmd = commandQueue.shift();
+    
+    try {
+      const data = new TextEncoder().encode(cmd);
+      if (bleChar.writeValueWithoutResponse) {
+        await bleChar.writeValueWithoutResponse(data);
+      } else if (bleChar.writeValue) {
+        await bleChar.writeValue(data);
+      } else {
+        throw new Error("浏览器不支持BLE写入操作");
+      }
+
+      // 停止指令清除超时计时器
+      const stopMatch = cmd.match(/#(\d+),0!/);
+      if (stopMatch || cmd === "#0,0!") {
+        if (cmd === "#0,0!") {
+          Object.keys(cmdTimeoutTimers).forEach(id => {
+            clearTimeout(cmdTimeoutTimers[id]);
+            delete cmdTimeoutTimers[id];
+          });
+        } else if (stopMatch) {
+          const trackId = stopMatch[1];
+          if (cmdTimeoutTimers[trackId]) {
+            clearTimeout(cmdTimeoutTimers[trackId]);
+            delete cmdTimeoutTimers[trackId];
+          }
         }
+      }
+
+      // 设置指令超时保护
+      const speedMatch = cmd.match(/#(\d+),([+-]?\d+)!/);
+      if (speedMatch && speedMatch[2] !== "0" && cmd !== "#0,0!") {
+        const trackId = speedMatch[1];
+        const speed = speedMatch[2];
+        if (cmdTimeoutTimers[trackId]) clearTimeout(cmdTimeoutTimers[trackId]);
         
-        // 初始化中央按钮拖动
-        function initCentralBtnDrag() {
-            let startX = 0;
-            let startY = 0;
-            let btnStartX = 0;
-            let btnStartY = 0;
-            let btnInitialCenterX = 0;
-            let btnInitialCenterY = 0;
-            
-            // 鼠标/触摸开始
-            centralBtn.addEventListener('mousedown', (e) => {
-                startCentralDrag(e);
-                
-                // 长按检测（1秒后切换旋转模式）
-                longPressTimer = setTimeout(() => {
-                    if (!hasMoved) {
-                        rotateMode = true;
-                        centralBtn.classList.add('rotate-mode');
-                        centralBtn.textContent = '旋转模式';
-                    }
-                }, 1000);
-            });
-            centralBtn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                startCentralDrag(e.touches[0]);
-                
-                // 长按检测（1秒后切换旋转模式）
-                longPressTimer = setTimeout(() => {
-                    if (!hasMoved) {
-                        rotateMode = true;
-                        centralBtn.classList.add('rotate-mode');
-                        centralBtn.textContent = '旋转模式';
-                    }
-                }, 1000);
-            });
-            
-            // 鼠标/触摸移动
-            document.addEventListener('mousemove', dragCentral);
-            document.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                dragCentral(e.touches[0]);
-            });
-            
-            // 鼠标/触摸结束
-            document.addEventListener('mouseup', endCentralDrag);
-            document.addEventListener('touchend', endCentralDrag);
-            
-            function startCentralDrag(e) {
-                if (isDragging) return;
-                isDragging = true;
-                dragElement = centralBtn;
-                hasMoved = false;
-                
-                startX = e.clientX;
-                startY = e.clientY;
-                btnStartX = parseFloat(getComputedStyle(centralBtn).left) || controlAreaRect.width / 2 - 60;
-                btnStartY = parseFloat(getComputedStyle(centralBtn).top) || controlAreaRect.height / 2 - 60;
-                
-                // 保存按钮的初始中心点位置
-                btnInitialCenterX = btnStartX + 30; // 按钮宽度的一半
-                btnInitialCenterY = btnStartY + 30; // 按钮高度的一半
-                
-                // 清除之前的长按计时器（如果有）
-                if (longPressTimer) clearTimeout(longPressTimer);
-            }
-            
-            function dragCentral(e) {
-                if (!isDragging || dragElement !== centralBtn) return;
-                
-                // 标记有拖动行为
-                hasMoved = true;
-                
-                // 计算拖动偏移
-                const deltaX = e.clientX - startX;
-                const deltaY = e.clientY - startY;
-                
-                let newX = btnStartX + deltaX;
-                let newY = btnStartY + deltaY;
-                
-                // 旋转模式下只允许左右拖动
-                if (rotateMode) {
-                    newY = controlAreaRect.height / 2 - 30;
-                }
-                
-                // 限制拖动范围
-                newX = Math.max(controlAreaRect.width / 2 - 30 - maxDragDistance, 
-                               Math.min(controlAreaRect.width / 2 - 30 + maxDragDistance, newX));
-                newY = Math.max(controlAreaRect.height / 2 - 30 - maxDragDistance, 
-                               Math.min(controlAreaRect.height / 2 - 30 + maxDragDistance, newY));
-                
-                // 更新按钮位置
-                centralBtn.style.left = `${newX}px`;
-                centralBtn.style.top = `${newY}px`;
-                
-                // 计算相对于中心的偏移量（归一化到-1 ~ 1）
-                const offsetX = (newX - (controlAreaRect.width / 2 - 30)) / maxDragDistance;
-                const offsetY = (newY - (controlAreaRect.height / 2 - 30)) / maxDragDistance * -1; // Y轴反向（上为正）
-                
-                // 根据模式计算速度
-                if (rotateMode) {
-                    // 旋转模式：仅X轴有效，左负右正
-                    const rotateSpeed = Math.round(offsetX * 100);
-                    leftSpeed = -rotateSpeed;   // 左转：左退右进；右转：左进右退
-                    rightSpeed = rotateSpeed;
-                } else {
-                    // 常规模式：Y轴控制前进/后退，X轴控制转向
-                    const baseSpeed = Math.round(offsetY * 100);
-                    const steerFactor = offsetX * 50; // 转向系数
-                    
-                    leftSpeed = Math.round(baseSpeed - steerFactor);
-                    rightSpeed = Math.round(baseSpeed + steerFactor);
-                    
-                    // 限制速度范围
-                    leftSpeed = Math.max(-100, Math.min(100, leftSpeed));
-                    rightSpeed = Math.max(-100, Math.min(100, rightSpeed));
-                }
-                
-                // 计算按钮当前位置的中心点
-                const btnCenterX = newX + 30; // 按钮宽度的一半
-                const btnCenterY = newY + 30; // 按钮高度的一半
-                
-                // 计算从初始中心点到当前中心点的角度
-                const angleDeltaX = btnCenterX - btnInitialCenterX;
-                const angleDeltaY = btnCenterY - btnInitialCenterY;
-                const angle = Math.round(Math.atan2(angleDeltaY, angleDeltaX) * 180 / Math.PI); // 转换为度数
-                
-                // 更新履带位置和角度
-                if (rotateMode) {
-                    // 旋转模式：履带跟随按钮一起移动，以按钮圆心为中点旋转
-                    const trackDistance = 30; // 履带到按钮中心的距离
-                    
-                    // 计算左右履带的新位置
-                    const leftTrackX = btnCenterX - trackDistance;
-                    const rightTrackX = btnCenterX + trackDistance;
-                    const trackY = btnCenterY + 15; // 履带底部与按钮中心对齐
-                    
-                    leftTrack.style.left = `${leftTrackX}px`;
-                    rightTrack.style.right = `${controlAreaRect.width - rightTrackX}px`;
-                    leftTrack.style.bottom = `${controlAreaRect.height - trackY}px`;
-                    rightTrack.style.bottom = `${controlAreaRect.height - trackY}px`;
-                    
-                    // 以按钮圆心为中点旋转
-                    leftTrack.style.transform = `rotate(${angle}deg)`;
-                    rightTrack.style.transform = `rotate(${angle}deg)`;
-                } else {
-                    // 常规模式：履带上下移动
-                    const trackOffsetY = -offsetY * 50; // 履带上下移动距离
-                    leftTrack.style.top = `${trackOffsetY}px`;
-                    rightTrack.style.top = `${trackOffsetY}px`;
-                    leftTrack.style.transform = `rotate(${angle}deg)`;
-                    rightTrack.style.transform = `rotate(${angle}deg)`;
-                }
-                
-                // 更新显示
-                leftSpeedDisplay.textContent = leftSpeed;
-                rightSpeedDisplay.textContent = rightSpeed;
-                
-                // 发送控制指令
-                sendData(leftSpeed, rightSpeed);
-            }
-            
-            function endCentralDrag() {
-                if (isDragging && dragElement === centralBtn) {
-                    isDragging = false;
-                    dragElement = null;
-                    
-                    // 清除长按计时器
-                    if (longPressTimer) {
-                        clearTimeout(longPressTimer);
-                        longPressTimer = null;
-                    }
-                    
-                    // 回弹到初始位置
-                    centralBtn.style.transition = 'all 0.5s ease';
-                    centralBtn.style.left = `${controlAreaRect.width / 2 - 60}px`;
-                    centralBtn.style.top = `${controlAreaRect.height / 2 - 60}px`;
-                    
-                    // 重置履带位置和角度
-                    leftTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
-                    rightTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
-                    leftTrack.style.top = '0px';
-                    rightTrack.style.top = '0px';
-                    leftTrack.style.transform = 'rotate(0deg)';
-                    rightTrack.style.transform = 'rotate(0deg)';
-                    
-                    // 如果是旋转模式，退出并恢复样式
-                    if (rotateMode) {
-                        setTimeout(() => {
-                            rotateMode = false;
-                            centralBtn.classList.remove('rotate-mode');
-                            centralBtn.textContent = '控制';
-                            stopAll(); // 旋转模式结束后停止
-                        }, 500);
-                    } else {
-                        // 常规模式释放后停止
-                        setTimeout(stopAll, 500);
-                    }
-                    
-                    // 重置过渡效果
-                    setTimeout(() => {
-                        centralBtn.style.transition = 'all 0.2s ease';
-                        leftTrack.style.transition = 'all 0.1s ease';
-                        rightTrack.style.transition = 'all 0.1s ease';
-                    }, 500);
-                }
-            }
+        cmdTimeoutTimers[trackId] = setTimeout(() => {
+          status.innerText = `⚠️ 履带${trackId}指令超时，强制停止`;
+          console.log(`履带${trackId}指令超时，强制停止`);
+          status.style.color = "red";
+          
+          // 发送停止指令
+          send(`#${trackId},0!`);
+          const slider = document.getElementById(`slider${trackId}`);
+          updateSliderPosition(slider, 50);
+          updateSliderSpeed(trackId, 50);
+        }, CMD_TIMEOUT);
+      }
+
+      status.innerText = `发送成功: ${cmd}`;
+      status.style.color = "green";
+      
+      setTimeout(() => {
+        if (bleDevice && bleDevice.gatt.connected) {
+          status.innerText = "已连接: " + bleDevice.name;
         }
-        
-        // 更新履带指示器位置
-        function updateTrackIndicators() {
-            // 根据速度计算指示器位置（速度0对应中心，100对应顶部，-100对应底部）
-            const leftIndicatorY = indicatorCenter - (leftSpeed / 100) * (indicatorCenter - 20);
-            const rightIndicatorY = indicatorCenter - (rightSpeed / 100) * (indicatorCenter - 20);
-            
-            leftIndicator.style.top = `${leftIndicatorY}px`;
-            rightIndicator.style.top = `${rightIndicatorY}px`;
-            
-            // 根据速度改变指示器颜色
-            leftIndicator.style.backgroundColor = leftSpeed >= 0 ? 
-                `rgba(0, ${Math.abs(leftSpeed) * 2}, 0, 0.7)` : 
-                `rgba(${Math.abs(leftSpeed) * 2}, 0, 0, 0.7)`;
-                
-            rightIndicator.style.backgroundColor = rightSpeed >= 0 ? 
-                `rgba(0, ${Math.abs(rightSpeed) * 2}, 0, 0.7)` : 
-                `rgba(${Math.abs(rightSpeed) * 2}, 0, 0, 0.7)`;
+      }, 2000);
+      console.log("【成功】发送指令：", cmd);
+    } catch (e) {
+      status.innerText = `发送失败: ${e.message}`;
+      status.style.color = "red";
+      console.error("指令发送失败:", e);
+      
+      if (e.message.includes("GATT operation not permitted") && bleDevice) {
+        try {
+          await bleDevice.gatt.connect();
+          status.innerText = "已重连蓝牙，可重试发送";
+          console.log("【成功】自动重连蓝牙");
+        } catch (reconnectErr) {
+          status.innerText = "重连失败，请重新连接蓝牙";
+          window.bleChar = null;
+          bleBtn.classList.remove('connected');
+          bleBtn.innerText = "🔵 连接蓝牙";
+          console.error("重连失败:", reconnectErr);
         }
-        
-        // 更新履带旋转角度
-        function updateTrackRotations() {
-            const leftRotationAngle = Math.round((leftSpeed / 100) * 30);
-            const rightRotationAngle = Math.round((rightSpeed / 100) * 30);
-            
-            leftTrack.style.transform = `rotate(${leftRotationAngle}deg)`;
-            rightTrack.style.transform = `rotate(${rightRotationAngle}deg)`;
-            
-            leftRotation.textContent = `${leftRotationAngle}°`;
-            rightRotation.textContent = `${rightRotationAngle}°`;
-        }
-        
-        // 重置履带指示器位置
-        function resetTrackIndicators() {
-            leftIndicator.style.transition = 'top 0.5s ease, background-color 0.5s';
-            rightIndicator.style.transition = 'top 0.5s ease, background-color 0.5s';
-            
-            leftIndicator.style.top = `${indicatorCenter - 6}px`;
-            rightIndicator.style.top = `${indicatorCenter - 6}px`;
-            
-            leftIndicator.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
-            rightIndicator.style.backgroundColor = 'rgba(255, 0, 0, 0.6)';
-            
-            setTimeout(() => {
-                leftIndicator.style.transition = 'top 0.1s';
-                rightIndicator.style.transition = 'top 0.1s';
-            }, 500);
-        }
-        
-        // 重置履带旋转角度
-        function resetTrackRotations() {
-            leftTrack.style.transition = 'transform 0.5s ease';
-            rightTrack.style.transition = 'transform 0.5s ease';
-            
-            leftTrack.style.transform = 'rotate(0deg)';
-            rightTrack.style.transform = 'rotate(0deg)';
-            
-            leftRotation.textContent = '0°';
-            rightRotation.textContent = '0°';
-            
-            setTimeout(() => {
-                leftTrack.style.transition = 'all 0.1s ease';
-                rightTrack.style.transition = 'all 0.1s ease';
-            }, 500);
-        }
-        
-        // BLE连接
-        async function connectBLE() {
-            try {
-                if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-                    // 断开连接
-                    bluetoothDevice.gatt.disconnect();
-                    onDisconnected();
-                    return;
-                }
-                
-                // 请求蓝牙设备
-                bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'ESP32' }],
-                    optionalServices: [SERVICE_UUID]
-                });
-                
-                // 连接GATT服务器
-                const server = await bluetoothDevice.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-                
-                // 更新状态
-                bleStatus.textContent = `已连接: ${bluetoothDevice.name}`;
-                bleStatus.className = 'ble-status connected';
-                connectBtn.textContent = '断开连接';
-                
-                // 监听断开
-                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
-                
-            } catch (error) {
-                console.error('BLE连接错误:', error);
-                bleStatus.textContent = `连接失败: ${error.message}`;
-                bleStatus.className = 'ble-status disconnected';
-            }
-        }
-        
-        // 处理断开连接
-        function onDisconnected() {
-            bluetoothDevice = null;
-            characteristic = null;
-            bleStatus.textContent = '未连接BLE设备';
-            bleStatus.className = 'ble-status disconnected';
-            connectBtn.textContent = '连接BLE设备';
-        }
-        
-        // 发送数据到ESP32
-        async function sendData(leftSpeed, rightSpeed) {
-            if (!characteristic) {
-                console.log('未连接BLE设备，跳过发送');
-                return;
-            }
-            
-            try {
-                // 格式化数据: LxxxRxxx
-                const left = leftSpeed.toString().padStart(3, leftSpeed >= 0 ? '0' : '-');
-                const right = rightSpeed.toString().padStart(3, rightSpeed >= 0 ? '0' : '-');
-                const data = `L${left}R${right}`;
-                
-                // 转换为Uint8Array并发送
-                const encoder = new TextEncoder();
-                await characteristic.writeValue(encoder.encode(data));
-                
-                console.log(`发送数据: ${data}`);
-            } catch (error) {
-                console.error('发送数据失败:', error);
-                bleStatus.textContent = '发送数据失败，请重新连接';
-                bleStatus.className = 'ble-status disconnected';
-            }
-        }
-        
-        // 停止所有电机
-        function stopAll() {
-            leftSpeed = 0;
-            rightSpeed = 0;
-            leftSpeedDisplay.textContent = '0';
-            rightSpeedDisplay.textContent = '0';
-            
-            // 重置履带位置和角度
-            leftTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
-            rightTrack.style.transition = 'top 0.5s ease, transform 0.5s ease';
-            leftTrack.style.top = '0px';
-            rightTrack.style.top = '0px';
-            leftTrack.style.transform = 'rotate(0deg)';
-            rightTrack.style.transform = 'rotate(0deg)';
-            
-            setTimeout(() => {
-                leftTrack.style.transition = 'all 0.1s ease';
-                rightTrack.style.transition = 'all 0.1s ease';
-            }, 500);
-            
-            sendData(0, 0);
-        }
-    </script>
+      }
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  
+  isProcessingQueue = false;
+}
+
+window.onload = () => {
+  initButtons();
+  [1,2].forEach(id => {
+    sliderHeld[id] = false;
+    sliderTimers[id] = null;
+    sliderActiveBtn[id] = null;
+  });
+  
+  bleBtn.classList.add('blink');
+  
+  // 初始化速度显示
+  updateSliderSpeed(1, 50);
+  updateSliderSpeed(2, 50);
+};
+
+window.addEventListener('beforeunload', function() {
+  Object.keys(sliderTimers).forEach(key => {
+    clearInterval(sliderTimers[key]);
+  });
+});
+</script>
+
 </body>
 </html>
