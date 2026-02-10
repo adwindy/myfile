@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Web BLE PWM Control</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 30px;
+    }
+    input[type=range] {
+      width: 300px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>ESP32-C3 Web BLE PWM</h2>
+
+<button id="connect">连接 BLE</button>
+<br><br>
+
+<label>
+  PWM:
+  <input type="range" id="pwm" min="0" max="255" value="0">
+  <span id="val">0</span>
+</label>
+
+<script>
+const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const CHAR_UUID    = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+let pwmChar = null;
+
+document.getElementById('connect').onclick = async () => {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }]
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    pwmChar = await service.getCharacteristic(CHAR_UUID);
+
+    alert('BLE 已连接');
+  } catch (e) {
+    alert('连接失败: ' + e);
+  }
+};
+
+document.getElementById('pwm').oninput = async (e) => {
+  const value = Number(e.target.value);
+  document.getElementById('val').textContent = value;
+
+  if (!pwmChar) return;
+
+  const data = new Uint8Array([value]);
+  await pwmChar.writeValue(data);
+};
+</script>
+
+</body>
+</html>
