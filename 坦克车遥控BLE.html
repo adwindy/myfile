@@ -1212,6 +1212,65 @@ async function processCommandQueue() {
   isProcessingQueue = false;
 }
 
+// 左履带前进80%，右履带前进80%，间隔200ms
+function startSendPWM(leftSpeed = 0, rightSpeed = 0, interval = 200) {
+  // 停止之前的定时器
+  stopSendPWM();
+  
+  // 验证速度范围
+  if (Math.abs(leftSpeed) > 100 || Math.abs(rightSpeed) > 100) {
+    console.error("速度值必须在 -100 到 100 之间");
+    return false;
+  }
+  
+  // 构造指令字符串（根据你的协议格式）
+  const cmd = `#${leftSpeed},${rightSpeed}!`;
+  
+  // 编码为Uint8Array
+  const encoder = new TextEncoder();
+  const data = encoder.encode(cmd);
+  
+  // 开始定时发送
+  window.pwmTimer = setInterval(() => {
+    if (window.bleChar) {
+      window.bleChar.writeValue(data)
+        .then(() => console.log("TX:", cmd, " 时间:", new Date().toLocaleTimeString()))
+        .catch(e => console.error("发送失败:", e));
+    } else {
+      console.warn("BLE 特征未连接，无法发送指令");
+      stopSendPWM(); // 自动停止
+    }
+  }, interval);
+  
+  window.isSending = true;
+  console.log(`开始发送指令: ${cmd}, 间隔: ${interval}ms`);
+  return true;
+}
+
+/**
+ * 停止发送PWM指令
+ */
+function stopSendPWM() {
+  if (window.pwmTimer) {
+    clearInterval(window.pwmTimer);
+    window.pwmTimer = null;
+    window.isSending = false;
+    console.log("已停止发送指令");
+    
+    // 可选：发送停止指令
+    if (window.bleChar) {
+      const stopCmd = "#0,0!";
+      const encoder = new TextEncoder();
+      const data = encoder.encode(stopCmd);
+      window.bleChar.writeValue(data)
+        .then(() => console.log("发送停止指令"))
+        .catch(e => console.error("停止指令发送失败:", e));
+    }
+  }
+}
+
+
+
 // 页面加载完成初始化
 window.onload = () => {
   initButtons();
