@@ -329,6 +329,52 @@ main {
   height: 15px;
   width: 100%;
 }
+
+/* 重连提示框样式 */
+#reconnectPrompt {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  z-index: 2000;
+  display: none;
+  flex-direction: column;
+  gap: 15px;
+  min-width: 250px;
+}
+
+#reconnectPrompt h4 {
+  margin: 0;
+  color: #333;
+  text-align: center;
+}
+
+#reconnectPrompt .prompt-btns {
+  display: flex;
+  gap: 10px;
+}
+
+#reconnectPrompt .prompt-btns button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+#reconnectNowBtn {
+  background: #3b82f6;
+  color: white;
+}
+
+#cancelReconnectBtn {
+  background: #eee;
+  color: #333;
+}
 </style>
 </head>
 
@@ -391,6 +437,16 @@ main {
   </div>
 </div>
 
+<!-- 重连提示框 -->
+<div id="reconnectPrompt">
+  <h4>蓝牙已断开</h4>
+  <p style="margin: 0; font-size: 14px; color: #666; text-align: center;">是否尝试重新连接上次的设备？</p>
+  <div class="prompt-btns">
+    <button id="reconnectNowBtn" onclick="manualReconnect()">立即重连</button>
+    <button id="cancelReconnectBtn" onclick="closeReconnectPrompt()">取消</button>
+  </div>
+</div>
+
 <div id="configModal">
   <div id="configBox">
     <h3 style="margin:0">坦克控制配置</h3>
@@ -434,11 +490,8 @@ let cmdTimeoutTimers = {};
 
 // 自动重连相关全局变量
 let lastConnectedDeviceInfo = null; // 存储最后连接的设备信息
-let reconnectTimer = null; // 自动重连定时器
 const RECONNECT_INTERVAL = 3000; // 重连间隔（3秒）
 const MAX_RECONNECT_ATTEMPTS = 10; // 最大重连次数
-let reconnectAttempts = 0; // 当前重连尝试次数
-let isAutoReconnecting = false; // 是否正在自动重连
 
 // 滑块状态变量
 let activeSlider = null;
@@ -541,7 +594,6 @@ function saveLastConnectedDevice(device) {
       lastConnectedDeviceInfo = {
         id: device.id,
         name: device.name || '未知设备',
-        uuids: device.uuids || [],
         timestamp: new Date().getTime()
       };
       localStorage.setItem('lastBLEDevice', JSON.stringify(lastConnectedDeviceInfo));
@@ -559,111 +611,84 @@ function clearLastConnectedDevice() {
   console.log('已清除保存的设备信息');
 }
 
-// 启动自动重连
-function startAutoReconnect() {
-  // 如果没有保存的设备信息，直接返回
-  if (!lastConnectedDeviceInfo) {
-    console.warn('无保存的设备信息，无法启动自动重连');
-    return;
-  }
-
-  // 如果已经在重连中，先停止
-  stopAutoReconnect();
-
-  const status = document.getElementById('statusInfo');
-  isAutoReconnecting = true;
-  reconnectAttempts = 0;
+// 显示重连提示框
+function showReconnectPrompt() {
+  // 如果没有保存的设备信息，不显示提示框
+  if (!lastConnectedDeviceInfo) return;
   
-  // 更新UI状态
-  bleBtn.classList.add('reconnecting');
-  bleBtn.innerText = '🟠 自动重连中';
-  bleBtn.disabled = true;
-
-  // 定义重连逻辑
-  const reconnect = async () => {
-    reconnectAttempts++;
-    console.log(`自动重连尝试 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
-    
-    status.innerText = `自动重连中 (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`;
-    status.style.color = '#ff9800';
-
-    try {
-      // 使用保存的设备ID进行连接
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ 
-          id: lastConnectedDeviceInfo.id 
-        }],
-        optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
-      });
-
-      window.bleDevice = device;
-      console.log("【自动重连】已找到设备:", device.name, device.id);
-
-      // 监听断开事件
-      device.addEventListener('gattserverdisconnected', onDisconnected);
-
-      // 连接GATT服务器
-      const server = await device.gatt.connect();
-      const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-      const characteristic = await service.getCharacteristic('0000ffe2-0000-1000-8000-00805f9b34fb');
-
-      // 验证特征值可写
-      if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
-        throw new Error("特征值不支持写入");
-      }
-
-      // 设置特征值监听
-      characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
-
-      // 更新全局变量
-      window.bleChar = characteristic;
-      
-      // 停止重连定时器
-      stopAutoReconnect();
-
-      // 更新UI状态
-      bleBtn.classList.remove('blink', 'reconnecting');
-      bleBtn.classList.add('connected');
-      bleBtn.innerText = "🔵 已连蓝牙";
-      bleBtn.disabled = false;
-      
-      status.innerText = `自动重连成功: ${device.name}`;
-      status.style.color = "green";
-      
-      console.log("【自动重连成功】特征值UUID:", characteristic.uuid);
-
-    } catch (e) {
-      console.error(`自动重连失败 (尝试${reconnectAttempts}):`, e.message);
-      
-      // 如果达到最大尝试次数，停止重连
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        stopAutoReconnect();
-        status.innerText = `自动重连失败: 已尝试${MAX_RECONNECT_ATTEMPTS}次`;
-        status.style.color = "red";
-        bleBtn.classList.remove('reconnecting');
-        bleBtn.innerText = "🔵 连接蓝牙";
-        bleBtn.disabled = false;
-      } else {
-        // 继续下一次重连
-        reconnectTimer = setTimeout(reconnect, RECONNECT_INTERVAL);
-      }
-    }
-  };
-
-  // 立即执行第一次重连
-  reconnect();
+  const prompt = document.getElementById('reconnectPrompt');
+  prompt.style.display = 'flex';
 }
 
-// 停止自动重连
-function stopAutoReconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+// 关闭重连提示框
+function closeReconnectPrompt() {
+  const prompt = document.getElementById('reconnectPrompt');
+  prompt.style.display = 'none';
+}
+
+// 手动触发重连（有用户交互，符合浏览器安全策略）
+async function manualReconnect() {
+  closeReconnectPrompt();
+  
+  const status = document.getElementById('statusInfo');
+  bleBtn.classList.add('reconnecting');
+  bleBtn.innerText = '🟠 重连中';
+  bleBtn.disabled = true;
+  
+  try {
+    // 关键修复：同时使用设备ID和服务UUID作为过滤条件
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ 
+        id: lastConnectedDeviceInfo.id,
+        services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] // 必须添加服务UUID
+      }],
+      optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
+    });
+
+    window.bleDevice = device;
+    console.log("【手动重连】已找到设备:", device.name, device.id);
+
+    // 监听断开事件
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    // 连接GATT服务器
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+    const characteristic = await service.getCharacteristic('0000ffe2-0000-1000-8000-00805f9b34fb');
+
+    // 验证特征值可写
+    if (!characteristic.properties.write && !characteristic.properties.writeWithoutResponse) {
+      throw new Error("特征值不支持写入");
+    }
+
+    // 设置特征值监听
+    characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
+
+    // 更新全局变量
+    window.bleChar = characteristic;
+    
+    // 更新UI状态
+    bleBtn.classList.remove('blink', 'reconnecting');
+    bleBtn.classList.add('connected');
+    bleBtn.innerText = "🔵 已连蓝牙";
+    bleBtn.disabled = false;
+    
+    status.innerText = `重连成功: ${device.name}`;
+    status.style.color = "green";
+    
+    console.log("【重连成功】特征值UUID:", characteristic.uuid);
+
+  } catch (e) {
+    console.error('手动重连失败:', e.message);
+    
+    // 恢复UI状态
+    bleBtn.classList.remove('reconnecting');
+    bleBtn.innerText = "🔵 连接蓝牙";
+    bleBtn.disabled = false;
+    
+    status.innerText = `重连失败: ${e.message.substring(0, 30)}`;
+    status.style.color = "red";
   }
-  isAutoReconnecting = false;
-  reconnectAttempts = 0;
-  bleBtn.classList.remove('reconnecting');
-  console.log('已停止自动重连');
 }
 
 // 初始化圆形控制按钮 - 优化跟手性
@@ -1136,9 +1161,6 @@ function saveConfig() {
 
 // 蓝牙连接函数
 async function connectBLE() {
-  // 如果正在自动重连，先停止
-  stopAutoReconnect();
-  
   const status = document.getElementById('statusInfo');
   bleBtn.classList.remove('connected', 'reconnecting');
   bleBtn.classList.add('blink');
@@ -1220,19 +1242,19 @@ async function connectBLE() {
   }
 }
 
-// 蓝牙断开处理函数（增加自动重连）
+// 蓝牙断开处理函数（改为显示重连提示框）
 function onDisconnected() {
   window.bleChar = null;
   window.bleDevice = null;
   bleBtn.classList.remove('blink', 'connected', 'reconnecting');
   bleBtn.innerText = "🔵 连接蓝牙";
   const status = document.getElementById('statusInfo');
-  status.innerText = "蓝牙已断开：启动自动重连...";
+  status.innerText = "蓝牙已断开";
   status.style.color = "orange";
   Object.keys(cmdTimeoutTimers).forEach(id => clearTimeout(cmdTimeoutTimers[id]));
   
-  // 启动自动重连
-  startAutoReconnect();
+  // 显示重连提示框（需要用户确认才能重连）
+  showReconnectPrompt();
 }
 
 function handleBLEData(event) {
@@ -1493,7 +1515,6 @@ window.addEventListener('beforeunload', function() {
   Object.keys(sliderTimers).forEach(key => {
     clearInterval(sliderTimers[key]);
   });
-  stopAutoReconnect();
   stopSendPWM();
 });
 </script>
