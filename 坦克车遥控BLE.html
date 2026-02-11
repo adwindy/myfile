@@ -443,6 +443,10 @@ let knobStartTop = 50;
 const controlKnob = document.getElementById('controlKnob');
 const mainContainer = document.querySelector('main');
 let mainRect = null;
+// 新增：圆形按钮持续发送定时器
+let knobContinuousTimer = null;
+// 新增：圆形按钮指令发送间隔（毫秒），可根据需要调整
+const KNOB_SEND_INTERVAL = 200;
 
 // 速度显示元素
 const leftSpeedDisplay = document.getElementById('leftSpeed');
@@ -551,6 +555,9 @@ function startKnobDrag(e, isTouch = false) {
   currentOperatingJoint = -1;
   document.body.style.cursor = 'move';
   controlKnob.style.zIndex = 20;
+  
+  // 新增：停止之前的定时器（避免重复）
+  stopKnobContinuousSend();
 }
 
 // 拖动圆形按钮 - 极简逻辑，提升跟手性
@@ -578,6 +585,11 @@ function dragKnob(e, isTouch = false) {
   
   // 控制滑块（应用6/5倍比例）
   controlSlidersByKnob(newLeftPercent, newTopPercent);
+  
+  // 新增：启动持续发送定时器（如果还没启动）
+  if (!knobContinuousTimer) {
+    startKnobContinuousSend(newLeftPercent, newTopPercent);
+  }
 }
 
 // 结束拖动圆形按钮
@@ -587,6 +599,9 @@ function endKnobDrag() {
   isKnobDragging = false;
   document.body.style.cursor = 'default';
   controlKnob.style.zIndex = 15;
+  
+  // 新增：停止持续发送定时器
+  stopKnobContinuousSend();
   
   // 添加回弹动画类
   controlKnob.classList.add('animate-return');
@@ -611,6 +626,36 @@ function endKnobDrag() {
   setTimeout(() => {
     controlKnob.classList.remove('animate-return');
   }, 300);
+}
+
+// 新增：启动圆形按钮持续发送指令
+function startKnobContinuousSend(horizontalPercent, verticalPercent) {
+  // 清除原有定时器（避免重复）
+  stopKnobContinuousSend();
+  
+  // 创建持续发送的定时器
+  knobContinuousTimer = setInterval(() => {
+    // 重新获取当前旋钮位置（避免位置过时）
+    const currentHorizontal = getKnobHorizontalPercent();
+    const currentVertical = getKnobVerticalPercent();
+    
+    // 只有当旋钮不在中心位置时才发送指令
+    if (Math.abs(currentHorizontal - 50) > 0.1 || Math.abs(currentVertical - 50) > 0.1) {
+      // 复用原有逻辑计算速度并发送指令
+      controlSlidersByKnob(currentHorizontal, currentVertical);
+    }
+  }, KNOB_SEND_INTERVAL);
+  
+  console.log(`启动旋钮持续发送，间隔${KNOB_SEND_INTERVAL}ms`);
+}
+
+// 新增：停止圆形按钮持续发送指令
+function stopKnobContinuousSend() {
+  if (knobContinuousTimer) {
+    clearInterval(knobContinuousTimer);
+    knobContinuousTimer = null;
+    console.log("停止旋钮持续发送");
+  }
 }
 
 // 更新圆形按钮位置 - 极简实现
@@ -1326,6 +1371,8 @@ window.addEventListener('beforeunload', function() {
   Object.keys(sliderTimers).forEach(key => {
     clearInterval(sliderTimers[key]);
   });
+  // 新增：页面卸载时停止旋钮持续发送
+  stopKnobContinuousSend();
 });
 </script>
 
