@@ -1212,51 +1212,84 @@ async function processCommandQueue() {
   isProcessingQueue = false;
 }
 
-// 左履带前进80%，右履带前进80%，间隔200ms
-// 全局变量：存储定时器，方便停止发送
-window.pwmTimers = {
-  left: null,   // 左轮定时器
-  right: null   // 右轮定时器
-};
+
+
+
+
+// 全局变量：存储定时器，避免重复发送
+window.pwmTimer = null;
 
 /**
  * 启动PWM指令发送（BLE控制坦克履带）
  * @param {number} leftSpeed - 左轮速度（-100~100，负数后退，正数前进，0停止）
  * @param {number} rightSpeed - 右轮速度（-100~100，负数后退，正数前进，0停止）
- * @param {number} interval - 发送间隔（毫秒，默认200ms）
+ * @param {number} interval - 发送间隔（毫秒，默认200ms，最小50ms）
+ * @param {number} totalDuration - 总发送时长（毫秒，0=无限发送）
  */
-function startSendPWM(leftSpeed, rightSpeed, interval = 200) {
-  // 1. 先停止之前的定时器（避免重复发送）
+function startSendPWM(leftSpeed, rightSpeed, interval = 200, totalDuration = 0) {
+  // 1. 先停止之前的定时器（避免重复/冲突）
   stopSendPWM();
 
-  // 2. 校验参数合法性
+  // 2. 参数校验与格式化
   const clampSpeed = (speed) => Math.max(-100, Math.min(100, parseInt(speed) || 0));
   const finalLeftSpeed = clampSpeed(leftSpeed);
   const finalRightSpeed = clampSpeed(rightSpeed);
-  const finalInterval = Math.max(50, parseInt(interval) || 200); // 最小间隔50ms，避免发送过快
+  const finalInterval = Math.max(50, parseInt(interval) || 200); // 最小50ms，避免过快
+  const finalDuration = parseInt(totalDuration) || 0;
 
-  // 3. 构建指令并启动左轮定时器
-  if (finalLeftSpeed !== 0) {
-    const leftCmd = `#1,${finalLeftSpeed}!`; // 左轮指令（ID=1）
-    window.pwmTimers.left = setInterval(() => {
-      sendBLECommand(leftCmd);
-    }, finalInterval);
-    console.log(`启动左轮发送：${leftCmd}，间隔${finalInterval}ms`);
-  }
-
-  // 4. 构建指令并启动右轮定时器
-  if (finalRightSpeed !== 0) {
-    const rightCmd = `#2,${finalRightSpeed}!`; // 右轮指令（ID=2）
-    window.pwmTimers.right = setInterval(() => {
-      sendBLECommand(rightCmd);
-    }, finalInterval);
-    console.log(`启动右轮发送：${rightCmd}，间隔${finalInterval}ms`);
-  }
-
-  // 5. 若两轮都为0，直接停止并提示
+  // 3. 若两轮都为0，直接返回
   if (finalLeftSpeed === 0 && finalRightSpeed === 0) {
-    console.warn("左轮和右轮速度都为0，未启动任何发送任务");
-    stopSendPWM();
+    console.warn("左轮和右轮速度都为0，未启动发送");
+    return;
+  }
+
+  // 4. 定义单次发送逻辑（串行发送，避免冲突）
+  const sendCmds = async () => {
+    if (!window.bleChar) {
+      console.warn("BLE特征未连接，无法发送指令");
+      stopSendPWM();
+      return;
+    }
+
+    try {
+      // 第一步：发送左轮指令（如果非0）
+      if (finalLeftSpeed !== 0) {
+        const leftCmd = `#1,${finalLeftSpeed}!`;
+        const leftData = new TextEncoder().encode(leftCmd);
+        await window.bleChar.writeValue(leftData);
+        console.log("TX成功:", leftCmd);
+      }
+
+      // 第二步：短暂延迟后发送右轮指令（避免同时操作）
+      if (finalRightSpeed !== 0) {
+        await new Promise(resolve => setTimeout(resolve, 20)); // 20ms间隔
+        const rightCmd = `#2,${finalRightSpeed}!`;
+        const rightData = new TextEncoder().encode(rightCmd);
+        await window.bleChar.writeValue(rightData);
+        console.log("TX成功:", rightCmd);
+      }
+    } catch (e) {
+      console.error("指令发送失败:", e.message);
+      // 仅当错误是"操作中"时，不立即停止（重试即可），其他错误停止
+      if (!e.message.includes("already in progress")) {
+        stopSendPWM();
+      }
+    }
+  };
+
+  // 5. 立即发送一次（避免等待第一个间隔）
+  sendCmds();
+
+  // 6. 启动单定时器循环发送（核心：一个定时器处理两轮指令）
+  window.pwmTimer = setInterval(sendCmds, finalInterval);
+  console.log(`启动PWM发送：左轮${finalLeftSpeed}%，右轮${finalRightSpeed}%，间隔${finalInterval}ms`);
+
+  // 7. 若指定总时长，到时自动停止
+  if (finalDuration > 0) {
+    setTimeout(() => {
+      stopSendPWM();
+      console.log(`PWM发送结束：已持续${finalDuration}ms`);
+    }, finalDuration);
   }
 }
 
@@ -1264,43 +1297,13 @@ function startSendPWM(leftSpeed, rightSpeed, interval = 200) {
  * 停止所有PWM指令发送
  */
 function stopSendPWM() {
-  // 清除左轮定时器
-  if (window.pwmTimers.left) {
-    clearInterval(window.pwmTimers.left);
-    window.pwmTimers.left = null;
-    console.log("停止左轮指令发送");
-  }
-  // 清除右轮定时器
-  if (window.pwmTimers.right) {
-    clearInterval(window.pwmTimers.right);
-    window.pwmTimers.right = null;
-    console.log("停止右轮指令发送");
+  if (window.pwmTimer) {
+    clearInterval(window.pwmTimer);
+    window.pwmTimer = null;
+    console.log("已停止PWM指令发送");
   }
 }
 
-/**
- * 通用BLE指令发送函数（内部复用）
- * @param {string} cmd - 要发送的指令（如#1,80!）
- */
-function sendBLECommand(cmd) {
-  if (!window.bleChar) {
-    console.warn("BLE特征未连接，无法发送指令：", cmd);
-    return;
-  }
-
-  // 转换为Uint8Array（Web BLE要求）
-  const encoder = new TextEncoder();
-  const data = encoder.encode(cmd);
-
-  // 发送指令
-  window.bleChar.writeValue(data)
-    .then(() => console.log("TX成功:", cmd))
-    .catch(e => {
-      console.error("TX失败:", cmd, "错误:", e);
-      // 发送失败时自动停止定时器，避免报错堆积
-      stopSendPWM();
-    });
-}
 
 
 // 页面加载完成初始化
