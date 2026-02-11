@@ -1278,7 +1278,29 @@ function stopSendPWM() {
   }
 }
 
+/**
+ * 通用BLE指令发送函数（内部复用）
+ * @param {string} cmd - 要发送的指令（如#1,80!）
+ */
+function sendBLECommand(cmd) {
+  if (!window.bleChar) {
+    console.warn("BLE特征未连接，无法发送指令：", cmd);
+    return;
+  }
 
+  // 转换为Uint8Array（Web BLE要求）
+  const encoder = new TextEncoder();
+  const data = encoder.encode(cmd);
+
+  // 发送指令
+  window.bleChar.writeValue(data)
+    .then(() => console.log("TX成功:", cmd))
+    .catch(e => {
+      console.error("TX失败:", cmd, "错误:", e);
+      // 发送失败时自动停止定时器，避免报错堆积
+      stopSendPWM();
+    });
+}
 
 
 // 页面加载完成初始化
