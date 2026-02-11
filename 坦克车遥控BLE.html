@@ -1213,61 +1213,71 @@ async function processCommandQueue() {
 }
 
 // 左履带前进80%，右履带前进80%，间隔200ms
-function startSendPWM(leftSpeed = 0, rightSpeed = 0, interval = 200) {
-  // 停止之前的定时器
+// 全局变量：存储定时器，方便停止发送
+window.pwmTimers = {
+  left: null,   // 左轮定时器
+  right: null   // 右轮定时器
+};
+
+/**
+ * 启动PWM指令发送（BLE控制坦克履带）
+ * @param {number} leftSpeed - 左轮速度（-100~100，负数后退，正数前进，0停止）
+ * @param {number} rightSpeed - 右轮速度（-100~100，负数后退，正数前进，0停止）
+ * @param {number} interval - 发送间隔（毫秒，默认200ms）
+ */
+function startSendPWM(leftSpeed, rightSpeed, interval = 200) {
+  // 1. 先停止之前的定时器（避免重复发送）
   stopSendPWM();
-  
-  // 验证速度范围
-  if (Math.abs(leftSpeed) > 100 || Math.abs(rightSpeed) > 100) {
-    console.error("速度值必须在 -100 到 100 之间");
-    return false;
+
+  // 2. 校验参数合法性
+  const clampSpeed = (speed) => Math.max(-100, Math.min(100, parseInt(speed) || 0));
+  const finalLeftSpeed = clampSpeed(leftSpeed);
+  const finalRightSpeed = clampSpeed(rightSpeed);
+  const finalInterval = Math.max(50, parseInt(interval) || 200); // 最小间隔50ms，避免发送过快
+
+  // 3. 构建指令并启动左轮定时器
+  if (finalLeftSpeed !== 0) {
+    const leftCmd = `#1,${finalLeftSpeed}!`; // 左轮指令（ID=1）
+    window.pwmTimers.left = setInterval(() => {
+      sendBLECommand(leftCmd);
+    }, finalInterval);
+    console.log(`启动左轮发送：${leftCmd}，间隔${finalInterval}ms`);
   }
-  
-  // 构造指令字符串（根据你的协议格式）
-  const cmd = `#${leftSpeed},${rightSpeed}!`;
-  
-  // 编码为Uint8Array
-  const encoder = new TextEncoder();
-  const data = encoder.encode(cmd);
-  
-  // 开始定时发送
-  window.pwmTimer = setInterval(() => {
-    if (window.bleChar) {
-      window.bleChar.writeValue(data)
-        .then(() => console.log("TX:", cmd, " 时间:", new Date().toLocaleTimeString()))
-        .catch(e => console.error("发送失败:", e));
-    } else {
-      console.warn("BLE 特征未连接，无法发送指令");
-      stopSendPWM(); // 自动停止
-    }
-  }, interval);
-  
-  window.isSending = true;
-  console.log(`开始发送指令: ${cmd}, 间隔: ${interval}ms`);
-  return true;
+
+  // 4. 构建指令并启动右轮定时器
+  if (finalRightSpeed !== 0) {
+    const rightCmd = `#2,${finalRightSpeed}!`; // 右轮指令（ID=2）
+    window.pwmTimers.right = setInterval(() => {
+      sendBLECommand(rightCmd);
+    }, finalInterval);
+    console.log(`启动右轮发送：${rightCmd}，间隔${finalInterval}ms`);
+  }
+
+  // 5. 若两轮都为0，直接停止并提示
+  if (finalLeftSpeed === 0 && finalRightSpeed === 0) {
+    console.warn("左轮和右轮速度都为0，未启动任何发送任务");
+    stopSendPWM();
+  }
 }
 
 /**
- * 停止发送PWM指令
+ * 停止所有PWM指令发送
  */
 function stopSendPWM() {
-  if (window.pwmTimer) {
-    clearInterval(window.pwmTimer);
-    window.pwmTimer = null;
-    window.isSending = false;
-    console.log("已停止发送指令");
-    
-    // 可选：发送停止指令
-    if (window.bleChar) {
-      const stopCmd = "#0,0!";
-      const encoder = new TextEncoder();
-      const data = encoder.encode(stopCmd);
-      window.bleChar.writeValue(data)
-        .then(() => console.log("发送停止指令"))
-        .catch(e => console.error("停止指令发送失败:", e));
-    }
+  // 清除左轮定时器
+  if (window.pwmTimers.left) {
+    clearInterval(window.pwmTimers.left);
+    window.pwmTimers.left = null;
+    console.log("停止左轮指令发送");
+  }
+  // 清除右轮定时器
+  if (window.pwmTimers.right) {
+    clearInterval(window.pwmTimers.right);
+    window.pwmTimers.right = null;
+    console.log("停止右轮指令发送");
   }
 }
+
 
 
 
