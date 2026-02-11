@@ -190,14 +190,17 @@ main {
 }
 
 .arm-bg {
-  display: none;
+  display: block;  /* 改为显示图片 */
   width: 100%;
   height: 100%;
   object-fit: contain;
-  opacity: 0.2;
+  opacity: 0.15;  /* 稍微降低透明度，避免干扰操作 */
   border-radius: 8px;
   margin: 0 auto;
   background: transparent;
+  position: absolute;  /* 固定在main容器中 */
+  z-index: 1;  /* 低于控制元素（10/15），但能显示 */
+  pointer-events: none;  /* 禁止图片响应点击/触摸，不影响操作 */
 }
 
 /* 履带滑块组样式 - 竖向布局 */
