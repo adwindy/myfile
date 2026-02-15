@@ -625,6 +625,9 @@ function endKnobDrag() {
   
   currentOperatingJoint = null;
   
+  // 发送停止指令（双电机单指令格式）
+  send("#0,0!");
+  
   // 动画结束后移除动画类
   setTimeout(() => {
     controlKnob.classList.remove('animate-return');
@@ -645,11 +648,102 @@ function startKnobContinuousSend(horizontalPercent, verticalPercent) {
     // 只有当旋钮不在中心位置时才发送指令
     if (Math.abs(currentHorizontal - 50) > 0.1 || Math.abs(currentVertical - 50) > 0.1) {
       // 复用原有逻辑计算速度并发送指令
-      controlSlidersByKnob(currentHorizontal, currentVertical);
+      sendKnobCommand(currentHorizontal, currentVertical);
     }
   }, KNOB_SEND_INTERVAL);
   
   console.log(`启动旋钮持续发送，间隔${KNOB_SEND_INTERVAL}ms`);
+}
+
+// 新增：生成并发送圆形按钮的双电机指令
+function sendKnobCommand(horizontalPercent, verticalPercent) {
+  const center = 50;
+  const verticalOffset = verticalPercent - center;
+  const horizontalOffset = horizontalPercent - center;
+  
+  // 计算基础速度（应用比例系数）
+  const baseSpeed = Math.max(-100, Math.min(100, verticalOffset * 2 * SLIDER_SCALE_FACTOR));
+  // 反转方向（按钮向上 → 前进）
+  const forwardSpeed = -baseSpeed;
+  
+  // 根据水平偏移计算左右轮速度差（实现转向）
+  let leftSpeed = forwardSpeed;
+  let rightSpeed = forwardSpeed;
+  
+  // 水平偏移量转换为转向系数（-1到1）
+  const turnFactor = horizontalOffset / 50;
+  
+  // 计算转向时的左右轮速度
+  if (Math.abs(forwardSpeed) > 0) {
+    // 前进/后退时的转向
+    if (turnFactor > 0) {
+      // 右偏 - 左轮加速，右轮减速
+      leftSpeed = forwardSpeed * (1 + Math.abs(turnFactor) * 0.8);
+      rightSpeed = forwardSpeed * (1 - Math.abs(turnFactor) * 0.8);
+    } else if (turnFactor < 0) {
+      // 左偏 - 右轮加速，左轮减速
+      rightSpeed = forwardSpeed * (1 + Math.abs(turnFactor) * 0.8);
+      leftSpeed = forwardSpeed * (1 - Math.abs(turnFactor) * 0.8);
+    }
+  } else if (Math.abs(horizontalOffset) > 5) {
+    // 原地转向（无前后移动）
+    leftSpeed = -50 * turnFactor;
+    rightSpeed = 50 * turnFactor;
+  }
+  
+  // 限制速度范围并取整
+  leftSpeed = Math.round(Math.max(-100, Math.min(100, leftSpeed)));
+  rightSpeed = Math.round(Math.max(-100, Math.min(100, rightSpeed)));
+  
+  // 更新滑块显示
+  updateSliderDisplay(1, leftSpeed);
+  updateSliderDisplay(2, rightSpeed);
+  
+  // 生成双电机单指令
+  let cmd = "";
+  if (leftSpeed === 0 && rightSpeed === 0) {
+    cmd = "#0,0!"; // 紧急停止指令
+  } else if (leftSpeed !== 0 && rightSpeed !== 0) {
+    cmd = `#1,${leftSpeed};2,${rightSpeed}!`; // 双电机指令
+  } else if (leftSpeed !== 0) {
+    cmd = `#1,${leftSpeed}!`; // 仅左电机
+  } else {
+    cmd = `#2,${rightSpeed}!`; // 仅右电机
+  }
+  
+  // 发送指令
+  if (cmd) {
+    send(cmd);
+    
+    // 更新状态显示
+    const status = document.getElementById('statusInfo');
+    status.innerText = `旋钮控制：左${leftSpeed}% 右${rightSpeed}%`;
+    status.style.color = "#ff9800";
+  }
+}
+
+// 辅助函数：更新滑块显示
+function updateSliderDisplay(sliderId, speed) {
+  const speedPercent = Math.abs(speed) + '%';
+  const sliderPercent = 50 + (speed / 2);
+  const clampedPercent = Math.max(0, Math.min(100, sliderPercent));
+  
+  // 更新滑块位置
+  const slider = document.getElementById(`slider${sliderId}`);
+  if (slider) {
+    updateSliderPosition(slider, clampedPercent);
+  }
+  
+  // 更新速度显示
+  if (sliderId == 1) {
+    leftSpeedDisplay.textContent = speedPercent;
+    leftSpeedPercent.textContent = speedPercent;
+    leftSpeedDisplay.style.color = speed !== 0 ? (speed > 0 ? '#16a34a' : '#ef4444') : '#666';
+  } else if (sliderId == 2) {
+    rightSpeedDisplay.textContent = speedPercent;
+    rightSpeedPercent.textContent = speedPercent;
+    rightSpeedDisplay.style.color = speed !== 0 ? (speed > 0 ? '#16a34a' : '#ef4444') : '#666';
+  }
 }
 
 // 新增：停止圆形按钮持续发送指令
@@ -680,7 +774,7 @@ function getKnobVerticalPercent() {
   return parseFloat(controlKnob.style.top) || 50;
 }
 
-// 根据旋钮位置控制滑块 - 核心：6/5倍比例
+// 根据旋钮位置控制滑块 - 兼容原有逻辑（主要用于显示）
 function controlSlidersByKnob(horizontalPercent, verticalPercent) {
   const center = 50;
   const verticalOffset = verticalPercent - center;
@@ -699,17 +793,19 @@ function controlSlidersByKnob(horizontalPercent, verticalPercent) {
     controlArea = 'right';
   }
   
-  // 根据区域控制对应滑块
+  // 根据区域更新滑块显示（不再发送单电机指令）
   switch(controlArea) {
     case 'left':
-      updateSliderByKnob(1, reversedSpeedPercent);
+      updateSliderDisplay(1, reversedSpeedPercent);
+      updateSliderDisplay(2, 0);
       break;
     case 'middle':
-      updateSliderByKnob(1, reversedSpeedPercent);
-      updateSliderByKnob(2, reversedSpeedPercent);
+      updateSliderDisplay(1, reversedSpeedPercent);
+      updateSliderDisplay(2, reversedSpeedPercent);
       break;
     case 'right':
-      updateSliderByKnob(2, reversedSpeedPercent);
+      updateSliderDisplay(2, reversedSpeedPercent);
+      updateSliderDisplay(1, 0);
       break;
   }
   
@@ -726,20 +822,9 @@ function controlSlidersByKnob(horizontalPercent, verticalPercent) {
   }
 }
 
-// 根据旋钮控制更新滑块位置和速度
+// 根据旋钮控制更新滑块位置和速度（仅用于显示）
 function updateSliderByKnob(sliderId, speedPercent) {
-  // 计算滑块位置（应用6/5倍比例）
-  const sliderPercent = 50 + (speedPercent / 2);
-  const clampedPercent = Math.max(0, Math.min(100, sliderPercent));
-  
-  // 更新滑块位置
-  const slider = document.getElementById(`slider${sliderId}`);
-  if (slider) {
-    updateSliderPosition(slider, clampedPercent);
-  }
-  
-  // 更新速度显示和发送指令
-  updateSliderSpeed(sliderId, clampedPercent);
+  updateSliderDisplay(sliderId, speedPercent);
 }
 
 // 初始化自定义竖向滑块
@@ -849,7 +934,7 @@ function getSliderPercent(slider, container) {
   return 100 - top;
 }
 
-// 更新滑块速度
+// 更新滑块速度（保留原有逻辑，用于滑块单独控制）
 function updateSliderSpeed(sliderId, percent) {
   const center = 50;
   const offset = percent - center;
@@ -1208,21 +1293,53 @@ async function processCommandQueue() {
       }
 
       const speedMatch = cmd.match(/#(\d+),([+-]?\d+)!/);
-      if (speedMatch && speedMatch[2] !== "0" && cmd !== "#0,0!") {
-        const trackId = speedMatch[1];
-        const speed = speedMatch[2];
-        if (cmdTimeoutTimers[trackId]) clearTimeout(cmdTimeoutTimers[trackId]);
-        
-        cmdTimeoutTimers[trackId] = setTimeout(() => {
-          status.innerText = `⚠️ 履带${trackId}指令超时，强制停止`;
-          console.log(`履带${trackId}指令超时，强制停止`);
-          status.style.color = "red";
+      // 适配双电机指令格式
+      const dualSpeedMatch = cmd.match(/#(\d+),([+-]?\d+);(\d+),([+-]?\d+)!/);
+      if ((speedMatch && speedMatch[2] !== "0" && cmd !== "#0,0!") || dualSpeedMatch) {
+        // 处理双电机指令的超时
+        if (dualSpeedMatch) {
+          const trackId1 = dualSpeedMatch[1];
+          const speed1 = dualSpeedMatch[2];
+          const trackId2 = dualSpeedMatch[3];
+          const speed2 = dualSpeedMatch[4];
           
-          send(`#${trackId},0!`);
-          const slider = document.getElementById(`slider${trackId}`);
-          updateSliderPosition(slider, 50);
-          updateSliderSpeed(trackId, 50);
-        }, CMD_TIMEOUT);
+          // 为两个电机设置超时
+          if (cmdTimeoutTimers[trackId1]) clearTimeout(cmdTimeoutTimers[trackId1]);
+          if (cmdTimeoutTimers[trackId2]) clearTimeout(cmdTimeoutTimers[trackId2]);
+          
+          cmdTimeoutTimers[trackId1] = setTimeout(() => {
+            status.innerText = `⚠️ 履带${trackId1}指令超时，强制停止`;
+            console.log(`履带${trackId1}指令超时，强制停止`);
+            status.style.color = "red";
+            send(`#${trackId1},0!`);
+            updateSliderPosition(document.getElementById(`slider${trackId1}`), 50);
+            updateSliderSpeed(trackId1, 50);
+          }, CMD_TIMEOUT);
+          
+          cmdTimeoutTimers[trackId2] = setTimeout(() => {
+            status.innerText = `⚠️ 履带${trackId2}指令超时，强制停止`;
+            console.log(`履带${trackId2}指令超时，强制停止`);
+            status.style.color = "red";
+            send(`#${trackId2},0!`);
+            updateSliderPosition(document.getElementById(`slider${trackId2}`), 50);
+            updateSliderSpeed(trackId2, 50);
+          }, CMD_TIMEOUT);
+        } else {
+          const trackId = speedMatch[1];
+          const speed = speedMatch[2];
+          if (cmdTimeoutTimers[trackId]) clearTimeout(cmdTimeoutTimers[trackId]);
+          
+          cmdTimeoutTimers[trackId] = setTimeout(() => {
+            status.innerText = `⚠️ 履带${trackId}指令超时，强制停止`;
+            console.log(`履带${trackId}指令超时，强制停止`);
+            status.style.color = "red";
+            
+            send(`#${trackId},0!`);
+            const slider = document.getElementById(`slider${trackId}`);
+            updateSliderPosition(slider, 50);
+            updateSliderSpeed(trackId, 50);
+          }, CMD_TIMEOUT);
+        }
       }
 
       status.innerText = `发送成功: ${cmd}`;
@@ -1260,8 +1377,6 @@ async function processCommandQueue() {
   isProcessingQueue = false;
 }
 
-
-
 // 全局变量：存储定时器，避免重复发送
 window.pwmTimer = null;
 
@@ -1289,7 +1404,7 @@ function startSendPWM(leftSpeed, rightSpeed, interval = 200, totalDuration = 0) 
     return;
   }
 
-  // 4. 定义单次发送逻辑（串行发送，避免冲突）
+  // 4. 定义单次发送逻辑（使用双电机单指令）
   const sendCmds = async () => {
     if (!window.bleChar) {
       console.warn("BLE特征未连接，无法发送指令");
@@ -1298,24 +1413,21 @@ function startSendPWM(leftSpeed, rightSpeed, interval = 200, totalDuration = 0) 
     }
 
     try {
-      // 第一步：发送左轮指令（如果非0）
-      if (finalLeftSpeed !== 0) {
-        const leftCmd = `#1,${finalLeftSpeed}!`;
-        const leftData = new TextEncoder().encode(leftCmd);
-        await window.bleChar.writeValue(leftData);
-        console.log("TX成功:", leftCmd);
+      // 生成双电机指令
+      let cmd = "";
+      if (finalLeftSpeed !== 0 && finalRightSpeed !== 0) {
+        cmd = `#1,${finalLeftSpeed};2,${finalRightSpeed}!`;
+      } else if (finalLeftSpeed !== 0) {
+        cmd = `#1,${finalLeftSpeed}!`;
+      } else {
+        cmd = `#2,${finalRightSpeed}!`;
       }
-
-      // 第二步：短暂延迟后发送右轮指令（避免同时操作）
-      if (finalRightSpeed !== 0) {
-        await new Promise(resolve => setTimeout(resolve, 20)); // 20ms间隔
-        const rightCmd = `#2,${finalRightSpeed}!`;
-        const rightData = new TextEncoder().encode(rightCmd);
-        await window.bleChar.writeValue(rightData);
-        console.log("TX成功:", rightCmd);
-      }
+      
+      const data = new TextEncoder().encode(cmd);
+      await window.bleChar.writeValue(data);
+      console.log("TX成功(PWM):", cmd);
     } catch (e) {
-      console.error("指令发送失败:", e.message);
+      console.error("PWM指令发送失败:", e.message);
       // 仅当错误是"操作中"时，不立即停止（重试即可），其他错误停止
       if (!e.message.includes("already in progress")) {
         stopSendPWM();
@@ -1349,8 +1461,6 @@ function stopSendPWM() {
     console.log("已停止PWM指令发送");
   }
 }
-
-
 
 // 页面加载完成初始化
 window.onload = () => {
