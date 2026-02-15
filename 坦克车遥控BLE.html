@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>坦克BLE遥控系统1036</title>
+<title>坦克BLE遥控系统</title>
 
 <style>
 body {
@@ -409,6 +409,9 @@ main {
     <input id="cfgPress">
     <label>抬起命令 (可选，停止命令: #ID,0!)</label>
     <input id="cfgRelease">
+    <!-- 新增：电机死区配置 -->
+    <label>电机启动死区百分比 (默认20%)</label>
+    <input type="number" id="motorDeadZone" min="0" max="90" value="20">
     <div class="modal-btns">
       <button class="btn-save" onclick="saveConfig()">保存</button>
       <button class="btn-close" onclick="closeConfig()">取消</button>
@@ -460,7 +463,35 @@ const rightSpeedPercent = document.getElementById('rightSpeedPercent');
 // 滑动比例系数（6/5 = 1.2倍）
 const SLIDER_SCALE_FACTOR = 1.4;
 
+// 新增：电机死区配置（界面百分比转实际PWM百分比）
+let MOTOR_DEAD_ZONE = 20; // 默认20%死区
+
+// 加载死区配置
+function loadDeadZoneConfig() {
+  const savedDeadZone = localStorage.getItem('motorDeadZone');
+  if (savedDeadZone) {
+    MOTOR_DEAD_ZONE = parseInt(savedDeadZone);
+    document.getElementById('motorDeadZone').value = MOTOR_DEAD_ZONE;
+  }
+}
+
+// 转换界面百分比到实际PWM百分比
+function convertToActualSpeed(interfaceSpeed) {
+  if (interfaceSpeed === 0) return 0;
+  
+  const absSpeed = Math.abs(interfaceSpeed);
+  const direction = interfaceSpeed > 0 ? 1 : -1;
+  
+  // 计算实际速度：界面1% → 死区值，界面100% → 100%
+  if (absSpeed < 1) return 0;
+  const actualSpeed = MOTOR_DEAD_ZONE + (100 - MOTOR_DEAD_ZONE) * (absSpeed - 1) / 99;
+  return Math.round(direction * actualSpeed);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+  // 加载死区配置
+  loadDeadZoneConfig();
+  
   const allButtons = document.querySelectorAll('button');
   allButtons.forEach(btn => {
     btn.addEventListener('touchstart', function() {
@@ -612,8 +643,8 @@ function endKnobDrag() {
   // 回弹到中心位置
   updateKnobPosition(50, 50);
   
-  // 滑块也回弹到中间位置（应用比例）
-  controlSlidersByKnob(50, 50);
+  // 滑块不自动回弹，保持原有位置
+  // controlSlidersByKnob(50, 50);
   
   // 停止所有滑块计时器
   Object.keys(sliderTimers).forEach(id => {
@@ -691,40 +722,75 @@ function sendKnobCommand(horizontalPercent, verticalPercent) {
     rightSpeed = 50 * turnFactor;
   }
   
-  // 限制速度范围并取整
+  // 限制速度范围并取整（只保留个位）
   leftSpeed = Math.round(Math.max(-100, Math.min(100, leftSpeed)));
   rightSpeed = Math.round(Math.max(-100, Math.min(100, rightSpeed)));
   
-  // 更新滑块显示
-  updateSliderDisplay(1, leftSpeed);
-  updateSliderDisplay(2, rightSpeed);
+  // 获取当前滑块位置，避免覆盖未操作的滑块
+  const currentLeftSpeed = parseInt(leftSpeedDisplay.textContent) || 0;
+  const currentRightSpeed = parseInt(rightSpeedDisplay.textContent) || 0;
+  
+  // 确定控制区域
+  let controlArea = 'middle';
+  if (horizontalPercent < 33) {
+    controlArea = 'left';
+  } else if (horizontalPercent > 66) {
+    controlArea = 'right';
+  }
+  
+  // 根据控制区域更新对应滑块
+  let finalLeftSpeed = leftSpeed;
+  let finalRightSpeed = rightSpeed;
+  
+  switch(controlArea) {
+    case 'left':
+      // 只更新左滑块，右滑块保持不变
+      finalRightSpeed = currentRightSpeed;
+      break;
+    case 'right':
+      // 只更新右滑块，左滑块保持不变
+      finalLeftSpeed = currentLeftSpeed;
+      break;
+    case 'middle':
+      // 同时更新两个滑块
+      break;
+  }
+  
+  // 更新滑块显示（只保留个位）
+  updateSliderDisplay(1, finalLeftSpeed);
+  updateSliderDisplay(2, finalRightSpeed);
+  
+  // 转换为实际PWM速度（应用死区）
+  const actualLeftSpeed = convertToActualSpeed(finalLeftSpeed);
+  const actualRightSpeed = convertToActualSpeed(finalRightSpeed);
   
   // 生成双电机单指令
   let cmd = "";
-  if (leftSpeed === 0 && rightSpeed === 0) {
+  if (actualLeftSpeed === 0 && actualRightSpeed === 0) {
     cmd = "#0,0!"; // 紧急停止指令
-  } else if (leftSpeed !== 0 && rightSpeed !== 0) {
-    cmd = `#1,${leftSpeed};2,${rightSpeed}!`; // 双电机指令
-  } else if (leftSpeed !== 0) {
-    cmd = `#1,${leftSpeed}!`; // 仅左电机
+  } else if (actualLeftSpeed !== 0 && actualRightSpeed !== 0) {
+    cmd = `#1,${actualLeftSpeed};2,${actualRightSpeed}!`; // 双电机指令
+  } else if (actualLeftSpeed !== 0) {
+    cmd = `#1,${actualLeftSpeed}!`; // 仅左电机
   } else {
-    cmd = `#2,${rightSpeed}!`; // 仅右电机
+    cmd = `#2,${actualRightSpeed}!`; // 仅右电机
   }
   
   // 发送指令
   if (cmd) {
     send(cmd);
     
-    // 更新状态显示
+    // 更新状态显示（只保留个位）
     const status = document.getElementById('statusInfo');
-    status.innerText = `旋钮控制：左${leftSpeed}% 右${rightSpeed}%`;
+    status.innerText = `旋钮控制：左${finalLeftSpeed}% 右${finalRightSpeed}% (实际：左${actualLeftSpeed}% 右${actualRightSpeed}%)`;
     status.style.color = "#ff9800";
   }
 }
 
-// 辅助函数：更新滑块显示
+// 辅助函数：更新滑块显示（只保留个位）
 function updateSliderDisplay(sliderId, speed) {
-  const speedPercent = Math.abs(speed) + '%';
+  // 只保留个位百分比
+  const speedPercent = Math.abs(Math.round(speed)) + '%';
   const sliderPercent = 50 + (speed / 2);
   const clampedPercent = Math.max(0, Math.min(100, sliderPercent));
   
@@ -734,7 +800,7 @@ function updateSliderDisplay(sliderId, speed) {
     updateSliderPosition(slider, clampedPercent);
   }
   
-  // 更新速度显示
+  // 更新速度显示（只保留个位）
   if (sliderId == 1) {
     leftSpeedDisplay.textContent = speedPercent;
     leftSpeedPercent.textContent = speedPercent;
@@ -793,26 +859,30 @@ function controlSlidersByKnob(horizontalPercent, verticalPercent) {
     controlArea = 'right';
   }
   
-  // 根据区域更新滑块显示（不再发送单电机指令）
+  // 获取当前滑块值，避免覆盖未操作的滑块
+  const currentLeftSpeed = parseInt(leftSpeedDisplay.textContent) || 0;
+  const currentRightSpeed = parseInt(rightSpeedDisplay.textContent) || 0;
+  
+  // 根据区域更新对应滑块显示（不再发送单电机指令）
   switch(controlArea) {
     case 'left':
       updateSliderDisplay(1, reversedSpeedPercent);
-      updateSliderDisplay(2, 0);
+      // 右滑块保持不变
       break;
     case 'middle':
       updateSliderDisplay(1, reversedSpeedPercent);
       updateSliderDisplay(2, reversedSpeedPercent);
       break;
     case 'right':
+      // 左滑块保持不变
       updateSliderDisplay(2, reversedSpeedPercent);
-      updateSliderDisplay(1, 0);
       break;
   }
   
-  // 更新状态显示
+  // 更新状态显示（只保留个位）
   const status = document.getElementById('statusInfo');
   if (Math.abs(reversedSpeedPercent) > 0) {
-    status.innerText = `旋钮控制(${controlArea}区域)：速度 ${reversedSpeedPercent > 0 ? '+' : ''}${Math.round(reversedSpeedPercent)}%`;
+    status.innerText = `旋钮控制(${controlArea}区域)：速度 ${Math.round(reversedSpeedPercent > 0 ? reversedSpeedPercent : reversedSpeedPercent)}%`;
     status.style.color = "#ff9800";
   } else {
     if (parseInt(leftSpeedDisplay.textContent) === 0 && parseInt(rightSpeedDisplay.textContent) === 0) {
@@ -938,6 +1008,7 @@ function getSliderPercent(slider, container) {
 function updateSliderSpeed(sliderId, percent) {
   const center = 50;
   const offset = percent - center;
+  // 只保留个位
   const speed = Math.round((offset / center) * 100);
   
   const speedPercent = Math.abs(speed) + '%';
@@ -961,7 +1032,10 @@ function updateSliderSpeed(sliderId, percent) {
     const originalCmd = buttonConfigs[targetBtnId]?.press;
     if (!originalCmd || !window.bleChar) return;
     
-    const speedCmd = calculateSpeedCmd(originalCmd, speed);
+    // 转换为实际PWM速度（应用死区）
+    const actualSpeed = convertToActualSpeed(speed);
+    const speedCmd = calculateSpeedCmd(originalCmd, actualSpeed);
+    
     if (!speedCmd) return;
     
     if (commandQueue.length >= QUEUE_LENGTH_THRESHOLD) {
@@ -1032,7 +1106,18 @@ function handleBtnPress(e) {
   if (e.cancelable) e.preventDefault();
   const btnId = e.target.id;
   const cfg = buttonConfigs[btnId];
-  if (cfg && cfg.press) send(cfg.press);
+  if (cfg && cfg.press) {
+    // 转换按钮指令中的速度（应用死区）
+    const cmdMatch = cfg.press.match(/(#\d+),([+-]?\d+)!/);
+    if (cmdMatch) {
+      const [, trackId, baseSpeed] = cmdMatch;
+      const actualSpeed = convertToActualSpeed(parseInt(baseSpeed));
+      const actualCmd = `${trackId},${actualSpeed}!`;
+      send(actualCmd);
+    } else {
+      send(cfg.press);
+    }
+  }
   
   if (btnId === 'EMERGENCY_STOP') {
     updateSliderPosition(document.getElementById('slider1'), 50);
@@ -1080,6 +1165,8 @@ function calculateSpeedCmd(originalCmd, speed) {
 function openConfig() {
   document.getElementById('configModal').style.display = "flex";
   loadCurrentConfig();
+  // 加载死区配置
+  document.getElementById('motorDeadZone').value = MOTOR_DEAD_ZONE;
 }
 
 function closeConfig() {
@@ -1102,6 +1189,14 @@ function saveConfig() {
     release: document.getElementById('cfgRelease').value.trim()
   };
   localStorage.setItem("tankBtnCfg", JSON.stringify(buttonConfigs));
+  
+  // 保存死区配置
+  const deadZoneValue = parseInt(document.getElementById('motorDeadZone').value);
+  if (!isNaN(deadZoneValue) && deadZoneValue >= 0 && deadZoneValue <= 90) {
+    MOTOR_DEAD_ZONE = deadZoneValue;
+    localStorage.setItem('motorDeadZone', MOTOR_DEAD_ZONE);
+  }
+  
   initButtons();
   closeConfig();
 }
@@ -1393,8 +1488,13 @@ function startSendPWM(leftSpeed, rightSpeed, interval = 200, totalDuration = 0) 
 
   // 2. 参数校验与格式化
   const clampSpeed = (speed) => Math.max(-100, Math.min(100, parseInt(speed) || 0));
-  const finalLeftSpeed = clampSpeed(leftSpeed);
-  const finalRightSpeed = clampSpeed(rightSpeed);
+  const interfaceLeftSpeed = clampSpeed(leftSpeed);
+  const interfaceRightSpeed = clampSpeed(rightSpeed);
+  
+  // 转换为实际PWM速度（应用死区）
+  const finalLeftSpeed = convertToActualSpeed(interfaceLeftSpeed);
+  const finalRightSpeed = convertToActualSpeed(interfaceRightSpeed);
+  
   const finalInterval = Math.max(50, parseInt(interval) || 200); // 最小50ms，避免过快
   const finalDuration = parseInt(totalDuration) || 0;
 
@@ -1440,7 +1540,7 @@ function startSendPWM(leftSpeed, rightSpeed, interval = 200, totalDuration = 0) 
 
   // 6. 启动单定时器循环发送（核心：一个定时器处理两轮指令）
   window.pwmTimer = setInterval(sendCmds, finalInterval);
-  console.log(`启动PWM发送：左轮${finalLeftSpeed}%，右轮${finalRightSpeed}%，间隔${finalInterval}ms`);
+  console.log(`启动PWM发送：界面左${interfaceLeftSpeed}% 右${interfaceRightSpeed}% (实际左${finalLeftSpeed}% 右${finalRightSpeed}%)，间隔${finalInterval}ms`);
 
   // 7. 若指定总时长，到时自动停止
   if (finalDuration > 0) {
